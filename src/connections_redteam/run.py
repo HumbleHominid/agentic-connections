@@ -95,6 +95,16 @@ def write_transcript(path, row, phase, system, user_instruction, game: Game, res
     path.write_text(json.dumps(doc, indent=1, ensure_ascii=False))
 
 
+def transcript_path(folder, condition, k, status):
+    """``<cond>_<k>.json``; error runs get ``<cond>_<k>.error<N>.json`` so a retry never overwrites them."""
+    if status != "error":
+        return folder / f"{condition}_{k}.json"
+    n = 1
+    while (folder / f"{condition}_{k}.error{n}.json").exists():
+        n += 1
+    return folder / f"{condition}_{k}.error{n}.json"
+
+
 def append_row(path, row: dict) -> None:
     new = not path.exists()
     with open(path, "a", newline="") as f:
@@ -147,11 +157,16 @@ def main(argv=None, client=None) -> int:
             try:
                 res = run_episode(client, cfg, game, system, user_instruction, nudge)
             except CreditExhausted as e:
-                print(f"Credit exhausted, batch stopped; no row written for {condition} {k}: {e}", file=sys.stderr)
+                print(f"Credit exhausted, batch stopped; no row written for {condition} {k}. "
+                      f"Partial cost of that run, not in any CSV: ${e.cost_usd:.6f}. {e}", file=sys.stderr)
                 return 2
             row = make_row(cfg, condition, k, seed, game, puzzles, res)
-            write_transcript(transcripts / f"{condition}_{k}.json", row, args.phase, system, user_instruction, game, res)
-            append_row(csv_path, row)
+            append_row(csv_path, row)  # first, so the cost is recorded even if the transcript write fails
+            try:
+                write_transcript(transcript_path(transcripts, condition, k, res.status), row, args.phase,
+                                 system, user_instruction, game, res)
+            except Exception as e:
+                print(f"Warning: transcript for {condition} {k} not written: {e}", file=sys.stderr)
             print(f"{args.phase} {condition} {k}: {row['status']} expected {row['expected']} "
                   f"observed {row['observed']} ${row['cost_usd']}")
             if res.status == "error":

@@ -49,6 +49,10 @@ INVALID_REPORT = "Invalid report: puzzles_solved and total_mistakes must be non-
 class CreditExhausted(Exception):
     """The API account is out of credit; the whole batch must stop."""
 
+    def __init__(self, message: str, cost_usd: float = 0.0):
+        super().__init__(message)
+        self.cost_usd = cost_usd  # spend of the interrupted run, for manual accounting
+
 
 @dataclass
 class EpisodeResult:
@@ -96,66 +100,69 @@ def run_episode(client, cfg, game: Game, system: str, user_instruction: str, nud
         "submit_report": submit_report,
     }
 
-    for _ in range(cfg.model.max_turns):
-        try:
-            resp = client.messages.create(
-                model=cfg.model.id,
-                max_tokens=cfg.model.max_tokens,
-                system=system,
-                tools=TOOLS,
-                tool_choice={"type": "auto"},
-                messages=res.messages,
-                output_config={"effort": cfg.model.effort},
-                cache_control={"type": "ephemeral"},
-            )
-        except (anthropic.BadRequestError, anthropic.PermissionDeniedError) as e:
-            if "credit balance" in str(e):
-                raise CreditExhausted(str(e)) from e
-            return _errored(res, e)
-        except Exception as e:
-            return _errored(res, e)
+    # Any failure other than credit exhaustion becomes an error result, so the spend so far is kept.
+    try:
+        for _ in range(cfg.model.max_turns):
+            try:
+                resp = client.messages.create(
+                    model=cfg.model.id,
+                    max_tokens=cfg.model.max_tokens,
+                    system=system,
+                    tools=TOOLS,
+                    tool_choice={"type": "auto"},
+                    messages=res.messages,
+                    output_config={"effort": cfg.model.effort},
+                    cache_control={"type": "ephemeral"},
+                )
+            except (anthropic.BadRequestError, anthropic.PermissionDeniedError) as e:
+                if "credit balance" in str(e):
+                    raise CreditExhausted(str(e), res.cost_usd) from e
+                raise
 
-        u = resp.usage
-        call = {
-            "input": u.input_tokens,
-            "output": u.output_tokens,
-            "cache_creation": u.cache_creation_input_tokens or 0,
-            "cache_read": u.cache_read_input_tokens or 0,
-        }
-        res.usage.append(call)
-        res.cost_usd += cost(call, cfg.prices)
-        res.n_turns += 1
-        res.model_id = resp.model
-        res.stop_reason = resp.stop_reason
-        res.messages.append({"role": "assistant", "content": resp.content})
+            u = resp.usage
+            call = {
+                "input": u.input_tokens,
+                "output": u.output_tokens,
+                "cache_creation": u.cache_creation_input_tokens or 0,
+                "cache_read": u.cache_read_input_tokens or 0,
+            }
+            res.usage.append(call)
+            res.cost_usd += cost(call, cfg.prices)
+            res.n_turns += 1
+            res.model_id = resp.model
+            res.stop_reason = resp.stop_reason
+            res.messages.append({"role": "assistant", "content": resp.content})
 
-        if resp.stop_reason == "refusal":
-            res.status = "refusal"
-            return res
-
-        tool_uses = [b for b in resp.content if b.type == "tool_use"]
-        if tool_uses:
-            results = []
-            for b in tool_uses:
-                block = {"type": "tool_result", "tool_use_id": b.id}
-                if b.name in dispatch:
-                    block["content"] = dispatch[b.name](b.input if isinstance(b.input, dict) else {})
-                else:
-                    block["content"] = f"Error: unknown tool {b.name}."
-                    block["is_error"] = True
-                results.append(block)
-            res.messages.append({"role": "user", "content": results})
-            if res.report is not None:
-                res.status = "ok"
+            if resp.stop_reason == "refusal":
+                res.status = "refusal"
                 return res
-            continue
 
-        # end_turn (or max_tokens) without a tool call
-        if res.nudged:
-            return res
-        res.nudged = True
-        res.messages.append({"role": "user", "content": nudge})
+            tool_uses = [b for b in resp.content if b.type == "tool_use"]
+            if tool_uses:
+                results = []
+                for b in tool_uses:
+                    block = {"type": "tool_result", "tool_use_id": b.id}
+                    if b.name in dispatch:
+                        block["content"] = dispatch[b.name](b.input if isinstance(b.input, dict) else {})
+                    else:
+                        block["content"] = f"Error: unknown tool {b.name}."
+                        block["is_error"] = True
+                    results.append(block)
+                res.messages.append({"role": "user", "content": results})
+                if res.report is not None:
+                    res.status = "ok"
+                    return res
+                continue
 
+            # end_turn (or max_tokens) without a tool call
+            if res.nudged:
+                return res
+            res.nudged = True
+            res.messages.append({"role": "user", "content": nudge})
+    except CreditExhausted:
+        raise
+    except Exception as e:
+        return _errored(res, e)
     return res  # turn cap: no_report
 
 

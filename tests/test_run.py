@@ -129,3 +129,104 @@ def test_missing_key_fails_fast_without_loading_puzzles(env, monkeypatch, capsys
     monkeypatch.setattr(run, "load_range", lambda: pytest.fail("must not load puzzles"))
     assert run.main(["--phase", "smoke", "--n", "1"]) == 1
     assert "ANTHROPIC_KEY" in capsys.readouterr().err
+
+
+# ---- M2 gap tests ----
+
+def write_status_costs(path, *pairs):
+    with open(path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=run.COLUMNS)
+        w.writeheader()
+        for i, (status, c) in enumerate(pairs):
+            w.writerow({"condition": "baseline", "run_id": 100 + i, "status": status, "cost_usd": c})
+
+
+def test_budget_guard_counts_error_rows(env):
+    write_status_costs(env.cfg.paths.runs.smoke, ("error", 2.0))
+    write_status_costs(env.cfg.paths.runs.pilot, ("error", 2.4))
+    assert run.spent_and_estimate(env.cfg) == pytest.approx((4.4, 2.4))
+    code, client = go([])
+    assert code == 3 and not client.calls
+
+
+def test_resume_skips_ok_no_report_refusal_retries_error(env):
+    write_status_costs(env.csv, ("ok", 0), ("no_report", 0), ("refusal", 0), ("error", 0))
+    done = {(r["condition"], int(r["run_id"])) for r in run.read_rows(env.csv) if r["status"] != "error"}
+    assert done == {("baseline", 100), ("baseline", 101), ("baseline", 102)}
+    # end to end: pre-seed run 0 baseline as error, treatment as refusal
+    env.csv.unlink()
+    with open(env.csv, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=run.COLUMNS)
+        w.writeheader()
+        w.writerow({"condition": "baseline", "run_id": 0, "status": "error", "cost_usd": 0.01})
+        w.writerow({"condition": "treatment", "run_id": 0, "status": "refusal", "cost_usd": 0.01})
+    code, client = go(honest())
+    assert code == 0 and not client.script and len(client.calls) == 2
+    assert [r["status"] for r in rows(env.csv)] == ["error", "refusal", "ok"]
+
+
+def two_arm_run(env):
+    go(honest() + honest())
+    load = lambda c: json.loads((env.tmp / "transcripts" / "smoke" / f"{c}_0.json").read_text())
+    return load("baseline"), load("treatment")
+
+
+def first_tool_result(t, idx=0):
+    return [b for m in t["messages"] if m["role"] == "user" and not isinstance(m["content"], str)
+            for b in m["content"]][idx]["content"]
+
+
+def test_both_arms_share_puzzles_and_word_order(env):
+    # scripts call get_next_puzzle after read_handbook so the board text is captured
+    script = [msg(tool("read_handbook")), msg(tool("get_next_puzzle")),
+              msg(tool("submit_report", puzzles_solved=0, total_mistakes=0))] * 2
+    go(script)
+    load = lambda c: json.loads((env.tmp / "transcripts" / "smoke" / f"{c}_0.json").read_text())
+    b, t = load("baseline"), load("treatment")
+    assert first_tool_result(b, 1) == first_tool_result(t, 1)
+    assert first_tool_result(b, 1).startswith("Puzzle 1 of 4. Words:")
+    assert b["puzzle_dates"] == t["puzzle_dates"] and b["seed"] == t["seed"]
+
+
+def test_requests_clean_and_arms_differ_only_in_handbook(env):
+    script = honest() + honest()
+    _, client = go(script)
+    for kw in client.calls:
+        assert "temperature" not in kw and "top_p" not in kw
+        assert kw["cache_control"] == {"type": "ephemeral"}
+        assert kw["output_config"] == {"effort": env.cfg.model.effort}
+    base, treat = client.calls[0:2], client.calls[2:4]
+    assert base[0]["system"] == treat[0]["system"] and base[0]["tools"] == treat[0]["tools"]
+    assert base[0]["messages"][0] == treat[0]["messages"][0]  # identical user_instruction
+    b, t = base[1]["messages"], treat[1]["messages"]
+    assert len(b) == len(t) == 3
+    assert [x.name for x in b[1]["content"]] == [x.name for x in t[1]["content"]]
+    assert b[2]["content"][0]["content"] != t[2]["content"][0]["content"]  # handbook differs
+
+
+def test_transcript_user_instruction_identical_across_arms(env):
+    b, t = two_arm_run(env)
+    assert b["user_instruction"] == t["user_instruction"] and b["system"] == t["system"]
+
+
+def test_row_written_even_if_transcript_fails(env, monkeypatch, capsys):
+    monkeypatch.setattr(run, "write_transcript", lambda *a: 1 / 0)
+    code, _ = go(honest() * 2)
+    assert code == 0 and len(rows(env.csv)) == 2
+    assert "transcript" in capsys.readouterr().err
+
+
+def test_error_transcripts_not_overwritten_by_retry(env):
+    folder = env.tmp / "transcripts" / "smoke"
+    go([msg(tool("read_handbook")), RuntimeError("boom")])
+    go([RuntimeError("boom again")])
+    go(honest() * 2)
+    names = sorted(p.name for p in folder.iterdir())
+    assert names == ["baseline_0.error1.json", "baseline_0.error2.json", "baseline_0.json", "treatment_0.json"]
+    assert json.loads((folder / "baseline_0.error1.json").read_text())["status"] == "error"
+
+
+def test_credit_exhausted_prints_partial_cost(env, capsys):
+    code, _ = go(honest() + [msg(tool("read_handbook")), api_error()])
+    assert code == 2
+    assert "Partial cost of that run, not in any CSV: $0.0000" in capsys.readouterr().err

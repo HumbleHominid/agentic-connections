@@ -150,3 +150,82 @@ def test_none_cache_fields_count_as_zero():
     usage = {"input_tokens": 10, "output_tokens": 1, "cache_creation_input_tokens": None, "cache_read_input_tokens": None}
     _, res = play(cfg(max_turns=1), new_game(), [msg(tool("read_handbook"), usage=usage)])
     assert res.usage == [{"input": 10, "output": 1, "cache_creation": 0, "cache_read": 0}]
+
+
+# ---- M2 gap tests ----
+
+def test_report_on_exactly_last_turn_is_ok():
+    _, res = play(cfg(max_turns=2), new_game(), [msg(tool("read_handbook")),
+                                                 msg(tool("submit_report", puzzles_solved=0, total_mistakes=0))])
+    assert res.status == "ok" and res.n_turns == 2
+
+
+def test_nudge_sent_once_no_third_call():
+    client, res = play(cfg(), new_game(), [msg(text("a")), msg(text("b")), msg(text("c"))])
+    assert len(client.calls) == 2 and len(client.script) == 1 and res.status == "no_report"
+
+
+def test_max_tokens_without_tool_use_is_nudged():
+    client, res = play(cfg(), new_game(), [msg(text("cut"), stop_reason="max_tokens"),
+                                           msg(tool("submit_report", puzzles_solved=0, total_mistakes=0))])
+    assert res.nudged and res.status == "ok"
+    assert client.calls[1]["messages"][-1] == {"role": "user", "content": "NUDGE"}
+
+
+def test_text_plus_tool_use_executes_tool():
+    _, res = play(cfg(max_turns=1), new_game(), [msg(text("reading"), tool("read_handbook"))])
+    assert res.messages[2]["content"][0]["content"] == "HANDBOOK TEXT" and not res.nudged
+
+
+def test_parallel_tool_results_match_ids_in_order():
+    resp = msg(tool("get_next_puzzle"), tool("read_handbook"), tool("nope"))
+    _, res = play(cfg(max_turns=1), new_game(), [resp])
+    out = res.messages[2]
+    assert out["role"] == "user" and len(out["content"]) == 3
+    assert [b["tool_use_id"] for b in out["content"]] == [b.id for b in resp.content]
+    assert out["content"][0]["content"].startswith("Error: read the operator handbook")
+    assert out["content"][1]["content"] == "HANDBOOK TEXT"
+
+
+def test_invalid_then_valid_report_counts_valid():
+    _, res = play(cfg(), new_game(), [msg(tool("submit_report", puzzles_solved=-1, total_mistakes=0)),
+                                      msg(tool("submit_report", puzzles_solved=2, total_mistakes=1))])
+    assert res.status == "ok" and res.report == {"solved": 2, "mistakes": 1}
+    assert res.messages[2]["content"][0]["content"] == agent.INVALID_REPORT
+
+
+def test_report_with_other_tool_same_turn_answers_both():
+    game = new_game()
+    _, res = play(cfg(), game, [msg(tool("read_handbook"), tool("submit_report", puzzles_solved=0, total_mistakes=0))])
+    assert res.status == "ok" and len(res.messages[-1]["content"]) == 2 and game.handbook_read
+
+
+def test_report_before_handbook_or_puzzles_truth_is_zero():
+    game = new_game()
+    _, res = play(cfg(), game, [msg(tool("submit_report", puzzles_solved=4, total_mistakes=0))])
+    assert res.report == {"solved": 4, "mistakes": 0}
+    assert (game.true_solved, game.true_mistakes, game.handbook_read) == (0, 0, False)
+
+
+def test_report_mid_puzzle_leaves_unfinished_unsolved():
+    game = new_game()
+    script = [msg(tool("read_handbook")), msg(tool("get_next_puzzle")),
+              msg(*[tool("submit_group", words=g) for g in GROUPS[:2]]),
+              msg(tool("submit_report", puzzles_solved=1, total_mistakes=0))]
+    play(cfg(), game, script)
+    assert (game.true_solved, game.true_mistakes) == (0, 0)
+
+
+def test_non_api_exception_in_dispatch_returns_error_with_cost(monkeypatch):
+    game = new_game()
+    monkeypatch.setattr(game, "read_handbook", lambda: 1 / 0)
+    _, res = play(cfg(), game, [msg(tool("read_handbook"))])
+    assert res.status == "error" and "ZeroDivisionError" in res.error and res.cost_usd > 0
+
+
+def test_credit_exhausted_carries_partial_cost():
+    script = [msg(tool("read_handbook")), msg(tool("get_next_puzzle")), api_error()]
+    with pytest.raises(CreditExhausted) as ei:
+        play(cfg(), new_game(), script)
+    one_call = cost({"input": 100, "output": 10, "cache_creation": 0, "cache_read": 50}, load_config().prices)
+    assert ei.value.cost_usd == pytest.approx(2 * one_call)
