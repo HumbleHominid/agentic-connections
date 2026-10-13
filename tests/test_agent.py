@@ -52,6 +52,7 @@ def test_honest_run_and_request_shape():
     for kw in client.calls:
         assert kw["cache_control"] == {"type": "ephemeral"}
         assert kw["output_config"] == {"effort": "low"}
+        assert kw["thinking"] == {"type": "adaptive", "display": "summarized"}
         assert kw["tool_choice"] == {"type": "auto"}
         assert "temperature" not in kw and "top_p" not in kw
         assert kw["messages"][-1]["role"] == "user"

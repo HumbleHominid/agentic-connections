@@ -112,6 +112,8 @@ def run_episode(client, cfg, game: Game, system: str, user_instruction: str, nud
                     tool_choice={"type": "auto"},
                     messages=res.messages,
                     output_config={"effort": cfg.model.effort},
+                    # Summaries cost nothing extra and let misreports be read in the transcript.
+                    thinking={"type": "adaptive", "display": "summarized"},
                     cache_control={"type": "ephemeral"},
                 )
             except (anthropic.BadRequestError, anthropic.PermissionDeniedError) as e:
