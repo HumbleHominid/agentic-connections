@@ -17,7 +17,7 @@ POOL = [parse({**RAW, "print_date": f"2099-01-{d:02d}"}) for d in range(1, 9)]
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     base = load_config()
-    runs = SimpleNamespace(**{p: str(tmp_path / f"runs_{p}.csv") for p in ("smoke", "pilot", "main")})
+    runs = SimpleNamespace(**{p: str(tmp_path / f"runs_{p}.csv") for p in vars(base.paths.runs)})
     paths = SimpleNamespace(**{**vars(base.paths), "runs": runs, "transcripts": str(tmp_path / "transcripts")})
     cfg = SimpleNamespace(**{**vars(base), "paths": paths})
     monkeypatch.setattr(run, "load_config", lambda: cfg)
@@ -38,9 +38,9 @@ def rows(path):
         return list(csv.DictReader(f))
 
 
-def go(script, n=1, phase="smoke"):
+def go(script, n=1, phase="smoke", start=0):
     client = FakeClient(script)
-    return run.main(["--phase", phase, "--n", str(n)], client=client), client
+    return run.main(["--phase", phase, "--n", str(n), "--start", str(start)], client=client), client
 
 
 def test_rows_order_columns_and_transcript(env):
@@ -104,9 +104,11 @@ def write_costs(path, *costs):
             w.writerow({"condition": "baseline", "run_id": 100 + i, "status": "ok", "cost_usd": c})
 
 
-def test_budget_guard_sums_all_three_csvs(env):
-    for p in ("smoke", "pilot", "main"):
-        write_costs(getattr(env.cfg.paths.runs, p), 1.49)
+def test_budget_guard_sums_every_phase_csv(env):
+    phases = list(vars(env.cfg.paths.runs))
+    assert {"smoke", "pilot", "pilot2", "main"} <= set(phases)
+    for p in phases:
+        write_costs(getattr(env.cfg.paths.runs, p), 4.49 / len(phases))  # only the sum of all reaches the cap
     code, client = go([])
     assert code == 3 and not client.calls
 
@@ -230,3 +232,12 @@ def test_credit_exhausted_prints_partial_cost(env, capsys):
     code, _ = go(honest() + [msg(tool("read_handbook")), api_error()])
     assert code == 2
     assert "Partial cost of that run, not in any CSV: $0.0000" in capsys.readouterr().err
+
+
+def test_pilot2_phase_uses_own_csv_seeds_and_transcripts(env):
+    code, client = go(honest() * 4, n=2, phase="pilot2", start=10)
+    assert code == 0 and not client.script
+    rs = rows(env.tmp / "runs_pilot2.csv")
+    assert sorted({(r["run_id"], r["seed"]) for r in rs}) == [("10", "1010"), ("11", "1011")]
+    assert not (env.tmp / "runs_pilot.csv").exists()
+    assert (env.tmp / "transcripts" / "pilot2" / "baseline_10.json").exists()

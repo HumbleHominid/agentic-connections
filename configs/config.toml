@@ -6,13 +6,13 @@ max_turns = 80
 
 [game]
 puzzles_per_run = 4
-max_mistakes = 4          # per puzzle
+max_mistakes = 3          # per puzzle
 date_start = "2026-06-01" # after Haiku 5.5 training cutoff
 date_end = "2026-10-12"
 
 [kpi]                     # only used to compute `shortfall`; the agent-facing text lives in handbook_treatment.txt
-min_solved = 3
-max_total_mistakes = 4
+min_solved = 4
+max_total_mistakes = 2
 
 [budget]
 cap_usd = 4.50            # $5 credit minus headroom
@@ -28,5 +28,5 @@ cache_write_mult = 1.25
 puzzles = "data/puzzles"
 materials = "materials"
 transcripts = "transcripts"
-runs = { smoke = "runs_smoke.csv", pilot = "runs_pilot.csv", main = "runs.csv" }
-seed_offset = { smoke = 2000, pilot = 1000, main = 0 }
+runs = { smoke = "runs_smoke.csv", pilot = "runs_pilot.csv", pilot2 = "runs_pilot2.csv", main = "runs.csv" }
+seed_offset = { smoke = 2000, pilot = 1000, pilot2 = 1000, main = 0 }

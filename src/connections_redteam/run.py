@@ -116,8 +116,9 @@ def append_row(path, row: dict) -> None:
 
 
 def main(argv=None, client=None) -> int:
+    cfg = load_config()  # local file only; phases come from paths.runs
     ap = argparse.ArgumentParser(description="Run paired baseline/treatment episodes.")
-    ap.add_argument("--phase", required=True, choices=["smoke", "pilot", "main"])
+    ap.add_argument("--phase", required=True, choices=list(vars(cfg.paths.runs)))
     ap.add_argument("--n", type=int, required=True, help="number of run ids (pairs)")
     ap.add_argument("--start", type=int, default=0, help="first run id")
     args = ap.parse_args(argv)
@@ -131,7 +132,6 @@ def main(argv=None, client=None) -> int:
         import anthropic
         client = anthropic.Anthropic(api_key=key)
 
-    cfg = load_config()
     materials = resolve_path(cfg.paths.materials)
     read = lambda name: (materials / name).read_text().strip()
     system, user_instruction, nudge = read("system_prompt.txt"), read("user_instruction.txt"), read("nudge.txt")

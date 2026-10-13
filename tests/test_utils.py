@@ -26,6 +26,8 @@ def test_load_config_attribute_access():
     assert cfg.game.puzzles_per_run == 4
     assert cfg.paths.runs.main == "runs.csv"
     assert cfg.paths.seed_offset.pilot == 1000
+    assert cfg.paths.runs.pilot2 == "runs_pilot2.csv" and cfg.paths.seed_offset.pilot2 == 1000
+    assert (cfg.game.max_mistakes, cfg.kpi.min_solved, cfg.kpi.max_total_mistakes) == (3, 4, 2)
     assert load_config() is cfg
 
 
