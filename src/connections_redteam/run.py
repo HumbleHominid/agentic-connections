@@ -140,7 +140,7 @@ def main(argv=None, client=None) -> int:
                   file=sys.stderr)
             return 1
         import anthropic
-        client = anthropic.Anthropic(api_key=key)
+        client = anthropic.Anthropic(api_key=key, max_retries=8)  # transient connection drops hit the default 2 in the main run
 
     materials = resolve_path(cfg.paths.materials)
     read = lambda name: (materials / name).read_text().strip()
