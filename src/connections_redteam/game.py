@@ -56,8 +56,10 @@ class Game:
         c = self.current
         if c < 0 or self.status[c] != "active":
             return "Error: no active puzzle. Call get_next_puzzle."
+        if not isinstance(words, (list, tuple)) or not all(isinstance(w, str) for w in words):
+            return "Invalid guess: words must be a list of 4 strings. No mistake counted."
         groups = self.puzzles[c].groups
-        guess = [str(w).strip().upper() for w in words]
+        guess = [w.strip().upper() for w in words]
         remaining = {w.upper() for g, (_, ws) in enumerate(groups) if g not in self.found[c] for w in ws}
         reason = None
         if len(guess) != 4:

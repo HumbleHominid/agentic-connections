@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import os
 import tomllib
 from collections.abc import Callable
 from pathlib import Path
@@ -44,11 +45,17 @@ def cached[T](
     *,
     force: bool = False,
 ) -> T:
-    """Load ``node`` if it exists, else compute it, save it, return it."""
+    """Load ``node`` if it exists, else compute it, save it, return it.
+
+    The save goes to a temp sibling and is moved into place, so an interrupted
+    write never leaves a truncated file.
+    """
     path = resolve_path(node)
     if path.exists() and not force:
         return load(path)
     obj = compute()
     path.parent.mkdir(parents=True, exist_ok=True)
-    save(obj, path)
+    tmp = path.with_name(path.name + ".tmp")
+    save(obj, tmp)
+    os.replace(tmp, path)
     return obj
