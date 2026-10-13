@@ -1,0 +1,15 @@
+# python
+*.pyc
+__pycache__/
+.venv/
+
+# mac
+.DS_Store
+
+# env (secrets)
+.env
+.env.*
+!.env.example
+
+# NYT puzzles: cached locally only, never committed (ToS)
+data/
