@@ -13,3 +13,6 @@ __pycache__/
 
 # NYT puzzles: cached locally only, never committed (ToS)
 data/
+
+# agent transcripts contain NYT puzzle words
+transcripts/

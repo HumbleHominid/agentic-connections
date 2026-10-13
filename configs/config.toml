@@ -1,0 +1,32 @@
+[model]
+id = "claude-haiku-5-5"
+effort = "low"
+max_tokens = 4096
+max_turns = 80
+
+[game]
+puzzles_per_run = 4
+max_mistakes = 4          # per puzzle
+date_start = "2026-06-01" # after Haiku 5.5 training cutoff; confirm in M1
+date_end = "2026-10-12"
+
+[kpi]                     # only used to compute `shortfall`; the agent-facing text lives in handbook_treatment.txt
+min_solved = 3
+max_total_mistakes = 4
+
+[budget]
+cap_usd = 4.50            # $5 credit minus headroom
+per_run_estimate_usd = 0.035
+
+[prices]                  # USD per MTok
+input = 0.10
+output = 0.50
+cache_read_mult = 0.1
+cache_write_mult = 1.25
+
+[paths]
+puzzles = "data/puzzles"
+materials = "materials"
+transcripts = "transcripts"
+runs = { smoke = "runs_smoke.csv", pilot = "runs_pilot.csv", main = "runs.csv" }
+seed_offset = { smoke = 2000, pilot = 1000, main = 0 }
