@@ -9,10 +9,11 @@ from connections_redteam import analyze
 from connections_redteam.run import COLUMNS
 
 
-def row(cond, k, status="ok", mis=0, fav=None, solved=2, short=1, cost=0.01):
+def row(cond, k, status="ok", mis=0, disc=None, kpi=0, solved=2, short=1, cost=0.01):
     ok = status == "ok"
     return {**{c: "" for c in COLUMNS}, "condition": cond, "run_id": str(k), "status": status,
-            "misaligned": str(mis) if ok else "", "favorable": str(mis if fav is None else fav) if ok else "",
+            "misaligned": str(mis) if ok else "", "discrepancy": str(mis if disc is None else disc) if ok else "",
+            "kpi_crossing": str(kpi) if ok else "",
             "true_solved": str(solved), "shortfall": str(short), "cost_usd": str(cost)}
 
 
@@ -65,19 +66,22 @@ def test_superseded_error_not_in_denominators_but_in_cost():
 def test_blank_flags_are_missing_not_zero():
     rows = arm("treatment", 4, 2) + arm("baseline", 4, 0)
     rows[0]["misaligned"] = ""  # a hit with a missing value
-    rows[1]["favorable"] = ""
+    rows[1]["discrepancy"] = ""
     res = analyze.analyze(rows)
     assert res["primary"]["t"] == (1, 3)
-    assert res["favorable"]["t"] == (1, 3)
+    assert res["discrepancy"]["t"] == (1, 3)
 
 
-def test_favorable_and_conditional_and_mannwhitney():
-    t = [row("treatment", i, mis=1, fav=int(i < 3), short=1, solved=1) for i in range(5)] + \
+def test_secondaries_conditional_and_mannwhitney():
+    t = [row("treatment", i, mis=1, disc=int(i < 3), kpi=int(i < 2), short=1, solved=1) for i in range(5)] + \
         [row("treatment", 5 + i, mis=0, short=0, solved=4) for i in range(5)]
     b = [row("baseline", i, mis=int(i == 0), short=int(i < 5), solved=3 + (i % 2)) for i in range(10)]
     res = analyze.analyze(t + b)
-    assert res["favorable"]["t"] == (3, 10) and res["favorable"]["b"] == (1, 10)
-    assert res["favorable"]["p"] == pytest.approx(fisher_p(3, 7, 1, 9))
+    assert res["discrepancy"]["t"] == (3, 10) and res["discrepancy"]["b"] == (1, 10)
+    assert res["discrepancy"]["p"] == pytest.approx(fisher_p(3, 7, 1, 9))
+    assert res["kpi_crossing"]["t"] == (2, 10) and res["kpi_crossing"]["b"] == (0, 10)
+    assert res["kpi_crossing"]["p"] == pytest.approx(fisher_p(2, 8, 0, 10))
+    assert res["table"]["treatment"]["kpi_crossing"] == pytest.approx(0.2)
     assert res["conditional"][("treatment", 1)] == (5, 5) and res["conditional"][("treatment", 0)] == (0, 5)
     assert res["conditional"][("baseline", 1)] == (1, 5)
     ts, bs = [1] * 5 + [4] * 5, [3 + (i % 2) for i in range(10)]
@@ -209,3 +213,18 @@ def test_cli_total_cost_includes_superseded_error(tmp_path, monkeypatch):
                      row("treatment", 1, cost=0.25)])
     analyze.main([str(p)])
     assert "Total cost in this file (all rows, superseded errors included): $1.0000" in (tmp_path / "results.md").read_text()
+
+
+def test_old_schema_csv_without_new_columns(tmp_path, monkeypatch):
+    old_cols = [c for c in COLUMNS if c not in ("discrepancy", "kpi_crossing")] + ["favorable"]
+    path = tmp_path / "runs_pilot2.csv"
+    with open(path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=old_cols, extrasaction="ignore")
+        w.writeheader()
+        w.writerows({**r, "favorable": r["misaligned"]} for r in arm("treatment", 5, 2) + arm("baseline", 5, 1))
+    monkeypatch.setattr(analyze, "spent_and_estimate", lambda cfg: (0.0, 0.0))
+    assert analyze.main([str(path)]) == 0
+    res = analyze.analyze(analyze.read_rows(path))
+    assert res["primary"]["t"] == (2, 5)
+    assert math.isnan(res["discrepancy"]["p"]) and res["discrepancy"]["t"] == (0, 0)
+    assert math.isnan(res["table"]["baseline"]["kpi_crossing"])
