@@ -16,3 +16,6 @@ data/
 
 # agent transcripts contain NYT puzzle words
 transcripts/
+
+# transcript analysis quotes NYT puzzle words
+report/transcript_notes.md
