@@ -117,3 +117,95 @@ def test_cli_writes_results(tmp_path, monkeypatch, capsys):
 
 def test_cli_empty_file(tmp_path):
     assert analyze.main([str(tmp_path / "missing.csv")]) == 1
+
+
+# --- gap tests ---
+
+def test_fisher_orientation_baseline_higher_gives_p_near_one():
+    res = analyze.analyze(arm("treatment", 20, 0) + arm("baseline", 20, 10))
+    assert res["primary"]["p"] > 0.99
+    assert res["primary"]["odds_ratio"] == 0
+    assert res["primary"]["p"] == pytest.approx(fisher_p(0, 20, 10, 10))
+
+
+def test_dedup_error_then_ok_keeps_ok():
+    rows = [row("baseline", 1, "error", cost=0.3), row("baseline", 1, mis=1)]
+    res = analyze.analyze(rows + arm("treatment", 1, 0, start=7))
+    assert res["table"]["baseline"]["n_ok"] == 1 and res["table"]["baseline"]["excluded"] == {}
+    assert res["primary"]["b"] == (1, 1)
+
+
+def test_dedup_ok_then_nothing_stays_ok():
+    res = analyze.analyze(arm("baseline", 2, 1) + arm("treatment", 2, 0))
+    assert res["n_rows"] == res["n_final"] == 4
+    assert res["table"]["baseline"]["n_ok"] == 2
+
+
+def test_dedup_ok_then_later_error_takes_last_row():
+    # Documents semantics: last row wins, even if it is an error.
+    rows = [row("baseline", 1, mis=1), row("baseline", 1, "error")]
+    t = analyze.analyze(rows)["table"]["baseline"]
+    assert t["n_ok"] == 0 and t["excluded"] == {"error": 1}
+
+
+def test_same_run_id_in_different_arms_not_deduped():
+    res = analyze.analyze([row("baseline", 1), row("treatment", 1)])
+    assert res["n_final"] == 2
+
+
+def test_refusal_excluded_from_primary_and_sensitivity():
+    rows = arm("treatment", 4, 1) + [row("treatment", 9, "refusal")] + arm("baseline", 4, 0)
+    res = analyze.analyze(rows)
+    assert res["primary"]["t"] == (1, 4)
+    assert res["sensitivity"]["t"] == (1, 4)
+
+
+def test_csv_written_by_run_append_row_roundtrips(tmp_path):
+    from connections_redteam.run import append_row, read_rows
+    p = tmp_path / "runs.csv"
+    rows = ([row("treatment", i, mis=int(i < 2)) for i in range(4)]
+            + [row("baseline", i, mis=0) for i in range(4)]
+            + [row("baseline", 9, "no_report"), row("treatment", 9, "refusal")])
+    rows[0]["shortfall"] = ""  # missing value written as empty string
+    for r in rows:
+        append_row(p, r)
+    read = read_rows(p)
+    assert all(v == "" or isinstance(v, str) for r in read for v in r.values())
+    res = analyze.analyze(read)
+    assert res["primary"]["t"] == (2, 4) and res["primary"]["b"] == (0, 4)
+    assert res["sensitivity"]["b"] == (1, 5)
+    assert res["table"]["treatment"]["excluded"] == {"refusal": 1}
+    assert res["conditional"][("treatment", 1)] == (1, 3)  # blank shortfall row not counted
+
+
+def test_one_arm_missing_entirely_renders_na():
+    res = analyze.analyze(arm("baseline", 5, 1))
+    assert res["table"]["treatment"]["n_ok"] == 0
+    assert math.isnan(res["primary"]["p"]) and math.isnan(res["sensitivity"]["p"])
+    assert math.isnan(res["mannwhitney"]["p"])
+    assert "n/a" in analyze.render(res, "x.csv")
+
+
+def test_cli_naming_in_tmp_path_only(tmp_path, monkeypatch):
+    monkeypatch.setattr(analyze, "spent_and_estimate", lambda cfg: (0.0, 0.0))
+    for name, out in (("runs.csv", "results.md"), ("smoke.csv", "results_smoke.md"),
+                      ("runs_main.csv", "results_runs_main.md")):
+        p = tmp_path / name
+        with open(p, "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=COLUMNS)
+            w.writeheader()
+            w.writerows(arm("treatment", 3, 1) + arm("baseline", 3, 0))
+        assert analyze.main([str(p)]) == 0
+        assert (tmp_path / out).exists()
+
+
+def test_cli_total_cost_includes_superseded_error(tmp_path, monkeypatch):
+    monkeypatch.setattr(analyze, "spent_and_estimate", lambda cfg: (0.0, 0.0))
+    p = tmp_path / "runs.csv"
+    with open(p, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=COLUMNS)
+        w.writeheader()
+        w.writerows([row("baseline", 1, "error", cost=0.5), row("baseline", 1, cost=0.25),
+                     row("treatment", 1, cost=0.25)])
+    analyze.main([str(p)])
+    assert "Total cost in this file (all rows, superseded errors included): $1.0000" in (tmp_path / "results.md").read_text()
