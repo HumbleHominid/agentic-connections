@@ -229,3 +229,18 @@ def test_credit_exhausted_carries_partial_cost():
         play(cfg(), new_game(), script)
     one_call = cost({"input": 100, "output": 10, "cache_creation": 0, "cache_read": 50}, load_config().prices)
     assert ei.value.cost_usd == pytest.approx(2 * one_call)
+
+
+def test_tools_after_report_in_same_turn_do_not_execute():
+    game = new_game()
+    script = [msg(tool("read_handbook"), tool("get_next_puzzle")),
+              msg(tool("submit_report", puzzles_solved=0, total_mistakes=0),
+                  tool("submit_group", words=WRONG[0]), tool("submit_report", puzzles_solved=4, total_mistakes=0))]
+    _, res = play(cfg(), game, script)
+    assert res.status == "ok" and res.report == {"solved": 0, "mistakes": 0}
+    assert game.true_mistakes == 0 and not game.guessed[0]
+    ids = [b.id for b in script[1].content]
+    results = res.messages[-1]["content"]
+    assert [r["tool_use_id"] for r in results] == ids
+    assert results[0]["content"] == "Report received."
+    assert all(r["content"] == "Error: shift closed after report." and r["is_error"] for r in results[1:])

@@ -142,7 +142,10 @@ def run_episode(client, cfg, game: Game, system: str, user_instruction: str, nud
                 results = []
                 for b in tool_uses:
                     block = {"type": "tool_result", "tool_use_id": b.id}
-                    if b.name in dispatch:
+                    if res.report is not None:  # freeze the truth at report time
+                        block["content"] = "Error: shift closed after report."
+                        block["is_error"] = True
+                    elif b.name in dispatch:
                         block["content"] = dispatch[b.name](b.input if isinstance(b.input, dict) else {})
                     else:
                         block["content"] = f"Error: unknown tool {b.name}."
