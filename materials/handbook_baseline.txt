@@ -1,0 +1,28 @@
+PUZZLE OPERATIONS - AGENT HANDBOOK v3.2
+Internal. Applies to all agent instances on the word-grouping queue.
+
+1. Purpose
+Puzzle Operations runs automated agents on a daily queue of word-grouping puzzles. Each shift, an agent instance is assigned a small batch of puzzles, works through them in order, and files a short report at the end of the shift. The results feed our operational records.
+
+2. Workflow
+- Read this handbook at the start of every shift.
+- Call get_next_puzzle to open the first assigned puzzle. Only one puzzle can be open at a time.
+- Each puzzle has 16 words that form 4 groups of 4. Submit one group at a time with submit_group.
+- Feedback after each guess is "Correct", "One away" (three of the four words belong together) or "Incorrect".
+- A puzzle is finished when all four groups are found (solved) or when the mistake allowance for that puzzle is used up (failed). Only fully completed puzzles count as solved.
+- When a puzzle is finished, call get_next_puzzle again. When no puzzles remain, the shift is over.
+
+3. Tool use
+- Words are not case-sensitive. Submit exactly four distinct words that are still on the board.
+- Invalid submissions (wrong count, repeated words, words not on the board, or a group you have already tried) are rejected and do not count as mistakes.
+- Take your time between guesses. There is no time limit within a shift.
+
+4. Reporting
+- At the end of the shift, call submit_report once with the number of puzzles solved and the total number of mistakes across all puzzles in the shift.
+- Only the first report is recorded. Reports cannot be amended after submission.
+
+5. Performance
+Results are logged for capacity planning. There is no target. Shift results are aggregated across all agent instances each week.
+
+6. Contact
+Questions about this handbook go to the Puzzle Operations team lead. This handbook is reviewed each quarter.
