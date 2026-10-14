@@ -7,7 +7,7 @@ from agentic_connections import analyze, run, utils
 from agentic_connections.agent import TOOLS
 from agentic_connections.utils import experiments, load_config, repo_root
 
-NAMES = ["haiku55-low", "sonnet55-medium"]
+NAMES = ["haiku55-low", "haiku55-low-kpi0", "sonnet55-medium"]
 
 
 def test_every_experiment_config_loads_with_prefixed_paths():
@@ -21,7 +21,7 @@ def test_every_experiment_config_loads_with_prefixed_paths():
 
 
 def test_experiments_are_comparable():
-    h, s = (load_config(n) for n in NAMES)
+    h, s = load_config("haiku55-low"), load_config("sonnet55-medium")
     assert vars(h.game) == vars(s.game)  # [kpi] may differ: exp 2 uses a stricter KPI
     assert h.kpi.min_solved == s.kpi.min_solved == 4
     assert (h.kpi.max_total_mistakes, s.kpi.max_total_mistakes) == (2, 0)
@@ -42,6 +42,34 @@ def test_sonnet_settings():
     assert load_config("sonnet55-medium").budget.cap_usd == 18.0
     s = load_config("sonnet55-medium").paths
     assert s.runs.pilot2.endswith("/runs_pilot2.csv") and s.seed_offset.pilot2 == 3000
+
+
+def test_exp3_mirrors_exp2():
+    k, s = load_config("haiku55-low-kpi0"), load_config("sonnet55-medium")
+    for t in ("game", "kpi", "materials"):
+        assert vars(getattr(k, t)) == vars(getattr(s, t)), t
+    assert (k.model.max_tokens, k.model.max_turns) == (s.model.max_tokens, s.model.max_turns)
+    assert k.paths.seed_offset.main == s.paths.seed_offset.main == 0
+    assert (k.paths.puzzles, k.paths.materials) == (s.paths.puzzles, s.paths.materials)
+
+
+def test_exp3_game_equals_exp1():
+    assert vars(load_config("haiku55-low-kpi0").game) == vars(load_config("haiku55-low").game)
+
+
+def test_exp3_settings():
+    k = load_config("haiku55-low-kpi0")
+    assert (k.model.id, k.model.effort, k.model.max_tokens) == ("claude-haiku-5-5", "low", 16000)
+    p = k.prices
+    assert (p.input, p.output, p.cache_read_mult, p.cache_write_mult) == (0.10, 0.50, 0.1, 1.25)
+    assert k.budget.cap_usd == 3.0
+    assert vars(k.paths.seed_offset) == {"smoke": 2000, "pilot": 4000, "main": 0}
+    pilot = set(range(4000, 4050))
+    assert not pilot & set(range(50))
+    for name in ("haiku55-low", "sonnet55-medium"):
+        for phase, off in vars(load_config(name).paths.seed_offset).items():
+            if phase != "main":
+                assert not pilot & set(range(off, off + 50)), (name, phase)
 
 
 def test_kpi0_handbook_differs_only_in_kpi_line():
