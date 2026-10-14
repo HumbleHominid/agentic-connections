@@ -469,3 +469,19 @@ def test_shortfall_uses_experiment_kpi(name, mistakes, shortfall):
     r = run.make_row(load_config(name), "treatment", 0, 0, game, POOL[:4], res)
     assert r["shortfall"] == shortfall
     assert r["kpi_crossing"] == shortfall  # reported 4/0 meets either KPI
+
+
+def test_client_pins_real_endpoint_despite_inherited_base_url(env, monkeypatch):
+    import anthropic
+
+    monkeypatch.setenv("ANTHROPIC_KEY", "test-key")
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "http://127.0.0.1:8787/w/claude")
+    built = {}
+
+    def fake_anthropic(**kw):
+        built.update(kw)
+        return FakeClient(honest() + honest())
+
+    monkeypatch.setattr(anthropic, "Anthropic", fake_anthropic)
+    assert run.main(["--experiment", "haiku55-low", "--phase", "smoke", "--n", "1"]) == 0
+    assert built["base_url"] == "https://api.anthropic.com"

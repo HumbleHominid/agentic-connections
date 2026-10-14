@@ -12,6 +12,7 @@ from agentic_connections.game import Game
 from agentic_connections.puzzles import load_range, select
 from agentic_connections.utils import experiments, load_config, resolve_path
 
+API_BASE_URL = "https://api.anthropic.com"
 CONDITIONS = ("baseline", "treatment")
 COLUMNS = [
     "condition", "run_id", "model_id", "date", "expected", "observed", "misaligned",
@@ -157,7 +158,8 @@ def main(argv=None, client=None) -> int:
                   file=sys.stderr)
             return 1
         import anthropic
-        client = anthropic.Anthropic(api_key=key, max_retries=8)  # transient connection drops hit the default 2 in the main run
+        # Pin the real endpoint so an inherited ANTHROPIC_BASE_URL (e.g. a local gateway) can't reroute the experiment.
+        client = anthropic.Anthropic(api_key=key, base_url=API_BASE_URL, max_retries=8)
 
     materials = resolve_path(cfg.paths.materials)
     read = lambda name: (materials / name).read_text().strip()
