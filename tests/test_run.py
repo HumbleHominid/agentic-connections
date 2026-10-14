@@ -327,3 +327,96 @@ def test_sonnet_request_shape(monkeypatch, tmp_path):
         assert not {"fallbacks", "betas", "extra_body", "temperature", "top_p"} & set(kw)
     assert {r["model_id"] for r in rows(runs.smoke)} == {"claude-sonnet-5-5"}
     assert {r["seed"] for r in rows(runs.smoke)} == {"2000"}
+
+
+# ---- E1 gap tests: money and isolation ----
+
+@pytest.fixture
+def sonnet_env(tmp_path, monkeypatch):
+    base = load_config("sonnet55-medium")
+    runs = SimpleNamespace(**{p: str(tmp_path / f"runs_{p}.csv") for p in vars(base.paths.runs)})
+    paths = SimpleNamespace(**{**vars(base.paths), "runs": runs, "transcripts": str(tmp_path / "transcripts")})
+    cfg = SimpleNamespace(**{**vars(base), "paths": paths})
+    monkeypatch.setattr(run, "load_config", lambda name: cfg)
+    monkeypatch.setattr(run, "load_range", lambda cfg: POOL)
+    return SimpleNamespace(cfg=cfg, tmp=tmp_path)
+
+
+def sonnet_honest(model="claude-sonnet-5-5"):
+    return [msg(tool("read_handbook"), model=model),
+            msg(tool("submit_report", puzzles_solved=0, total_mistakes=0), model=model)]
+
+
+def sgo(script, n=1):
+    client = FakeClient(script)
+    return run.main(["--experiment", "sonnet55-medium", "--phase", "smoke", "--n", str(n)], client=client), client
+
+
+def test_unknown_experiment_fails_before_key_or_network(monkeypatch):
+    import anthropic
+    monkeypatch.setenv("ANTHROPIC_KEY", "sk-test")
+    monkeypatch.setattr(anthropic, "Anthropic", lambda **kw: pytest.fail("client must not be built"))
+    monkeypatch.setattr(run, "load_range", lambda cfg: pytest.fail("must not load puzzles"))
+    with pytest.raises(SystemExit) as e:
+        run.main(["--experiment", "no-such-exp", "--phase", "smoke", "--n", "1"])
+    assert e.value.code == 2
+
+
+def test_missing_experiment_does_not_touch_key_or_network(monkeypatch):
+    import anthropic
+    monkeypatch.setenv("ANTHROPIC_KEY", "sk-test")
+    monkeypatch.setattr(anthropic, "Anthropic", lambda **kw: pytest.fail("client must not be built"))
+    with pytest.raises(SystemExit):
+        run.main(["--phase", "smoke", "--n", "1"])
+
+
+def test_sonnet_run_writes_only_its_own_csv_and_transcripts(sonnet_env):
+    real = repo_experiments_snapshot()
+    code, _ = sgo(sonnet_honest() * 2)
+    assert code == 0
+    written = {p.relative_to(sonnet_env.tmp).as_posix() for p in sonnet_env.tmp.rglob("*") if p.is_file()}
+    assert written == {"runs_smoke.csv", "transcripts/smoke/baseline_0.json", "transcripts/smoke/treatment_0.json"}
+    assert repo_experiments_snapshot() == real  # real experiments/ untouched
+
+
+def repo_experiments_snapshot():
+    from agentic_connections.utils import repo_root
+    return {str(p): p.stat().st_mtime_ns for p in (repo_root() / "experiments").rglob("*") if p.is_file()}
+
+
+def test_projection_guard_no_prior_rows_uses_per_run_estimate(sonnet_env, capsys):
+    # cap 18.00, estimate 0.35: 52 runs -> 18.20 > 18 -> exit 3, no API call
+    code, client = sgo([], n=26)
+    assert code == 3 and not client.calls
+    err = capsys.readouterr().err
+    assert "mean $0.3500" in err and "$18.2000 > cap $18.0" in err
+
+
+def test_projection_guard_no_prior_rows_under_cap_runs(sonnet_env):
+    code, client = sgo(sonnet_honest() * 2, n=1)  # 2 x 0.35 = 0.70 <= 18
+    assert code == 0 and len(client.calls) == 4
+
+
+def test_projection_guard_uses_logged_mean_over_estimate(sonnet_env):
+    write_costs(sonnet_env.cfg.paths.runs.main, 10.0)  # mean 10 -> 10 + 2 x 10 = 30 > 18
+    code, client = sgo([], n=1)
+    assert code == 3 and not client.calls
+
+
+def test_dated_suffix_model_id_is_accepted(sonnet_env):
+    code, _ = sgo(sonnet_honest(model="claude-sonnet-5-5-20261001") * 2)
+    assert code == 0
+    assert {r["model_id"] for r in rows(sonnet_env.tmp / "runs_smoke.csv")} == {"claude-sonnet-5-5-20261001"}
+
+
+def test_sonnet_model_mismatch_is_error_row_and_stops(sonnet_env, capsys):
+    code, client = sgo([msg(tool("read_handbook"), model="claude-haiku-5-5"), *sonnet_honest()])
+    assert code == 1 and len(client.calls) == 1
+    (r,) = rows(sonnet_env.tmp / "runs_smoke.csv")
+    assert r["status"] == "error" and r["model_id"] == "claude-haiku-5-5"
+    assert "model mismatch" in capsys.readouterr().err
+
+
+def test_model_id_prefix_without_separator_is_rejected(sonnet_env):
+    sgo([msg(tool("read_handbook"), model="claude-sonnet-5-55"), *sonnet_honest()] * 2)
+    assert rows(sonnet_env.tmp / "runs_smoke.csv")[0]["status"] == "error"

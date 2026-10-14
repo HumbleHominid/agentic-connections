@@ -84,3 +84,19 @@ def test_combine_concatenates_main_csvs(tmp_root):
     assert header[-1] == "experiment" and header[:-1] == run.COLUMNS
     assert len(rows) == 3  # main CSVs only: 2 + 1
     assert [r["experiment"] for r in rows] == ["exp-a", "exp-a", "exp-b"]
+
+
+@pytest.mark.parametrize("target", ["experiments/exp-a/artifacts/runs.csv", "experiments/exp-b/artifacts/runs_smoke.csv"])
+def test_combine_refuses_to_overwrite_a_runs_csv(tmp_root, target, capsys):
+    before = {p: p.read_bytes() for p in tmp_root.glob("experiments/*/artifacts/*.csv")}
+    assert analyze.main(["--combine", target]) == 1
+    assert "Refusing" in capsys.readouterr().err
+    assert {p: p.read_bytes() for p in tmp_root.glob("experiments/*/artifacts/*.csv")} == before
+
+
+def test_combine_rejects_unexpected_columns_without_writing(tmp_root, capsys):
+    (tmp_root / "experiments" / "exp-b" / "artifacts" / "runs.csv").write_text(
+        "condition,run_id,favorable\nbaseline,0,1\n")
+    out = tmp_root / "dist" / "runs.csv"
+    assert analyze.main(["--combine", str(out)]) == 1
+    assert "unexpected columns ['favorable']" in capsys.readouterr().err and not out.exists()

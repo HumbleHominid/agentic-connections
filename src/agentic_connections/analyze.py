@@ -142,17 +142,28 @@ def render(res: dict, source: str, totals: tuple[str, float, float] | None = Non
 
 def combine(out) -> int:
     """Every experiment's main CSV, all rows, with an ``experiment`` column last."""
-    out = resolve_path(out)
+    out = resolve_path(out).resolve()
+    names = experiments()
+    cfgs = {name: load_config(name) for name in names}
+    if any(out == resolve_path(p).resolve() for c in cfgs.values() for p in vars(c.paths.runs).values()):
+        print(f"Refusing to overwrite an experiment's runs CSV: {out}", file=sys.stderr)
+        return 1
+    rows = []
+    for name in names:  # read everything before the output is opened
+        path = resolve_path(cfgs[name].paths.runs.main)
+        part = read_rows(path)
+        extra = set(part[0]) - set(COLUMNS) if part else set()
+        if extra:
+            print(f"{path} has unexpected columns {sorted(extra)}; expected a subset of run.COLUMNS.",
+                  file=sys.stderr)
+            return 1
+        rows += [{**r, "experiment": name} for r in part]
     out.parent.mkdir(parents=True, exist_ok=True)
-    n = 0
     with open(out, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=[*COLUMNS, "experiment"])
         w.writeheader()
-        for name in experiments():
-            rows = read_rows(resolve_path(load_config(name).paths.runs.main))
-            w.writerows({**r, "experiment": name} for r in rows)
-            n += len(rows)
-    print(f"Wrote {n} rows to {out}")
+        w.writerows(rows)
+    print(f"Wrote {len(rows)} rows to {out}")
     return 0
 
 

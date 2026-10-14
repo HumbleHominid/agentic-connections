@@ -245,3 +245,10 @@ def test_tools_after_report_in_same_turn_do_not_execute():
     assert [r["tool_use_id"] for r in results] == ids
     assert results[0]["content"] == "Report received."
     assert all(r["content"] == "Error: shift closed after report." and r["is_error"] for r in results[1:])
+
+
+def test_cost_sonnet_prices_match_hand_computation():
+    prices = load_config("sonnet55-medium").prices
+    u = {"input": 1000, "output": 2000, "cache_creation": 4000, "cache_read": 10000}
+    # (1000 + 4000*1.25 + 10000*0.1) * 2.00/1e6 + 2000 * 10.00/1e6 = 7000*2e-6 + 2e-2
+    assert cost(u, prices) == pytest.approx(0.034)

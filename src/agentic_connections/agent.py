@@ -135,7 +135,8 @@ def run_episode(client, cfg, game: Game, system: str, user_instruction: str, nud
             res.model_id = resp.model
             res.stop_reason = resp.stop_reason
             res.messages.append({"role": "assistant", "content": resp.content})
-            if not resp.model.startswith(cfg.model.id):  # e.g. a silent server-side model switch
+            # e.g. a silent server-side model switch; "-" so claude-sonnet-5-55 can't pass as claude-sonnet-5-5
+            if not (resp.model == cfg.model.id or resp.model.startswith(cfg.model.id + "-")):
                 raise RuntimeError(f"model mismatch: requested {cfg.model.id}, got {resp.model}")
 
             if resp.stop_reason == "refusal":

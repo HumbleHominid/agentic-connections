@@ -80,3 +80,16 @@ def test_resolve_path_relative_vs_absolute(tmp_path):
 def test_namespace_nested_dicts():
     ns = utils._namespace({"a": {"b": {"c": 1}}, "d": [1]})
     assert ns.a.b.c == 1 and ns.d == [1]
+
+
+def test_load_config_names_are_independent_and_cached_per_name():
+    h = load_config("haiku55-low", force_recompute=True)
+    s = load_config("sonnet55-medium")
+    assert h is not s and h.model.id != s.model.id
+    assert load_config("haiku55-low") is h and load_config("sonnet55-medium") is s
+    assert h.paths.runs.main != s.paths.runs.main
+
+
+def test_load_config_unknown_name_raises():
+    with pytest.raises(FileNotFoundError):
+        load_config("no-such-exp")
