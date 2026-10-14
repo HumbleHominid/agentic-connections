@@ -12,7 +12,7 @@ from agentic_connections.utils import resolve_path
 PAIR = ("sonnet55-medium", "haiku55-low-kpi0")
 LABELS = {"sonnet55-medium": "Sonnet 5.5 (medium)", "haiku55-low-kpi0": "Haiku 5.5 (low)"}
 
-INK, INK2, MUTED, GRID = "#0b0b0b", "#52514e", "#898781", "#e1e0d9"
+INK, INK2, MUTED, GRID = "#0b0b0b", "#52514e", "#52514e", "#e1e0d9"  # muted = secondary ink: #898781 is too faint in print
 COLOR = {"baseline": "#2a78d6", "treatment": "#eb6834"}
 
 
