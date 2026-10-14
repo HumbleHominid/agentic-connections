@@ -29,15 +29,25 @@ def read_rows(path) -> list[dict]:
         return list(csv.DictReader(f))
 
 
-def spent_and_estimate(cfg) -> tuple[float, float]:
-    """Total cost logged across all phase CSVs, and the per-run estimate for the guard."""
-    costs = [
+def logged_costs(cfg) -> list[float]:
+    """Every ``cost_usd`` logged in the experiment's phase CSVs."""
+    return [
         float(r["cost_usd"])
         for p in vars(cfg.paths.runs).values()
         for r in read_rows(resolve_path(p))
         if r.get("cost_usd")
     ]
+
+
+def spent_and_estimate(cfg) -> tuple[float, float]:
+    """Total cost logged across all phase CSVs, and the per-run estimate for the guard."""
+    costs = logged_costs(cfg)
     return sum(costs), max([cfg.budget.per_run_estimate_usd, *costs])
+
+
+def grand_total() -> float:
+    """Spend across every experiment."""
+    return sum(sum(logged_costs(load_config(name))) for name in experiments())
 
 
 def make_row(cfg, condition, k, seed, game: Game, puzzles, res: EpisodeResult) -> dict:
@@ -99,7 +109,7 @@ def write_transcript(path, row, phase, system, user_instruction, game: Game, res
         "model_id": row["model_id"], "date": row["date"], "puzzle_dates": row["puzzle_dates"].split(";"),
         "system": system, "user_instruction": user_instruction, "messages": messages, "usage": res.usage,
         "truth": {"solved": game.true_solved, "mistakes": game.true_mistakes}, "report": res.report,
-        "status": res.status, "stop_reason": res.stop_reason, "cost_usd": res.cost_usd, "error": res.error,
+        "status": res.status, "stop_reason": res.stop_reason, "stop_details": res.stop_details, "cost_usd": res.cost_usd, "error": res.error,
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(doc, indent=1, ensure_ascii=False))
@@ -155,36 +165,48 @@ def main(argv=None, client=None) -> int:
     done = {(r["condition"], int(r["run_id"])) for r in read_rows(csv_path) if r["status"] != "error"}
     pool = load_range(cfg)
 
-    for k in range(args.start, args.start + args.n):
+    todo = [(k, c) for k in range(args.start, args.start + args.n)
+            for c in (CONDITIONS if k % 2 == 0 else reversed(CONDITIONS)) if (c, k) not in done]
+    cap = cfg.budget.cap_usd
+    for i, (k, condition) in enumerate(todo):
         seed = getattr(cfg.paths.seed_offset, args.phase) + k
-        for condition in CONDITIONS if k % 2 == 0 else reversed(CONDITIONS):
-            if (condition, k) in done:
-                continue
-            spent, est = spent_and_estimate(cfg)
-            if spent + est > cfg.budget.cap_usd:
-                print(f"Budget guard: spent ${spent:.4f} + est ${est:.4f} > cap ${cfg.budget.cap_usd}. Stopping.",
-                      file=sys.stderr)
-                return 3
-            puzzles = select(pool, seed, cfg.game.puzzles_per_run)
-            game = Game(puzzles, seed, cfg.game.max_mistakes, handbooks[condition])
-            try:
-                res = run_episode(client, cfg, game, system, user_instruction, nudge)
-            except CreditExhausted as e:
-                print(f"Credit exhausted, batch stopped; no row written for {condition} {k}. "
-                      f"Partial cost of that run, not in any CSV: ${e.cost_usd:.6f}. {e}", file=sys.stderr)
-                return 2
-            row = make_row(cfg, condition, k, seed, game, puzzles, res)
-            append_row(csv_path, row)  # first, so the cost is recorded even if the transcript write fails
-            try:
-                write_transcript(transcript_path(transcripts, condition, k, res.status), row, args.phase,
-                                 system, user_instruction, game, res)
-            except Exception as e:
-                print(f"Warning: transcript for {condition} {k} not written: {e}", file=sys.stderr)
-            print(f"{args.phase} {condition} {k}: {row['status']} expected {row['expected']} "
-                  f"observed {row['observed']} ${row['cost_usd']}")
-            if res.status == "error":
-                print(f"Error in {condition} {k}, batch stopped: {res.error}", file=sys.stderr)
-                return 1
+        costs = logged_costs(cfg)
+        spent = sum(costs)
+        est = max([cfg.budget.per_run_estimate_usd, *costs])
+        mean = spent / len(costs) if costs else cfg.budget.per_run_estimate_usd
+        projected = spent + (len(todo) - i) * mean
+        if projected > cap:
+            print(f"Projection guard: spent ${spent:.4f} + {len(todo) - i} runs x mean ${mean:.4f} "
+                  f"= ${projected:.4f} > cap ${cap}. Stopping.", file=sys.stderr)
+            return 3
+        if spent + est > cap:
+            print(f"Budget guard: spent ${spent:.4f} + est ${est:.4f} > cap ${cap}. Stopping.",
+                  file=sys.stderr)
+            return 3
+        puzzles = select(pool, seed, cfg.game.puzzles_per_run)
+        game = Game(puzzles, seed, cfg.game.max_mistakes, handbooks[condition])
+        try:
+            res = run_episode(client, cfg, game, system, user_instruction, nudge)
+        except CreditExhausted as e:
+            print(f"Credit exhausted, batch stopped; no row written for {condition} {k}. "
+                  f"Partial cost of that run, not in any CSV: ${e.cost_usd:.6f}. {e}", file=sys.stderr)
+            return 2
+        row = make_row(cfg, condition, k, seed, game, puzzles, res)
+        append_row(csv_path, row)  # first, so the cost is recorded even if the transcript write fails
+        try:
+            write_transcript(transcript_path(transcripts, condition, k, res.status), row, args.phase,
+                             system, user_instruction, game, res)
+        except Exception as e:
+            print(f"Warning: transcript for {condition} {k} not written: {e}", file=sys.stderr)
+        costs = logged_costs(cfg)
+        spent, mean = sum(costs), sum(costs) / len(costs)
+        print(f"{args.phase} {condition} {k}: {row['status']} expected {row['expected']} "
+              f"observed {row['observed']} ${row['cost_usd']} | exp spent ${spent:.4f} / cap ${cap} | "
+              f"mean ${mean:.4f} | projected ${spent + (len(todo) - i - 1) * mean:.4f} | "
+              f"all experiments ${grand_total():.4f}", flush=True)
+        if res.status == "error":
+            print(f"Error in {condition} {k}, batch stopped: {res.error}", file=sys.stderr)
+            return 1
     return 0
 
 

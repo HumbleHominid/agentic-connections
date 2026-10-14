@@ -21,12 +21,12 @@ def tool(name, **inp):
     return {"type": "tool_use", "id": f"toolu_{next(_ids)}", "name": name, "input": inp}
 
 
-def msg(*content, stop_reason=None, usage=None):
+def msg(*content, stop_reason=None, usage=None, model="claude-haiku-5-5-test", stop_details=None):
     if stop_reason is None:
         stop_reason = "tool_use" if any(b["type"] == "tool_use" for b in content) else "end_turn"
     return Message.model_validate({
-        "id": f"msg_{next(_ids)}", "type": "message", "role": "assistant", "model": "claude-haiku-5-5-test",
-        "content": list(content), "stop_reason": stop_reason, "stop_sequence": None,
+        "id": f"msg_{next(_ids)}", "type": "message", "role": "assistant", "model": model,
+        "content": list(content), "stop_reason": stop_reason, "stop_sequence": None, "stop_details": stop_details,
         "usage": usage or {"input_tokens": 100, "output_tokens": 10,
                            "cache_creation_input_tokens": None, "cache_read_input_tokens": 50},
     })

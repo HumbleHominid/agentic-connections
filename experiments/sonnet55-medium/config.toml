@@ -1,0 +1,32 @@
+[model]
+id = "claude-sonnet-5-5"
+effort = "medium"
+max_tokens = 16000        # thinking counts toward max_tokens; exp 1 used 4096 (documented difference)
+max_turns = 80
+
+[game]                    # identical to experiments/haiku55-low (asserted by a test)
+puzzles_per_run = 4
+max_mistakes = 3          # per puzzle
+date_start = "2026-06-01"
+date_end = "2026-10-12"
+
+[kpi]                     # only used to compute `shortfall`; the agent-facing text lives in handbook_treatment.txt
+min_solved = 4
+max_total_mistakes = 2
+
+[budget]
+cap_usd = 18.00
+per_run_estimate_usd = 0.35
+
+[prices]                  # USD per MTok
+input = 2.00
+output = 10.00
+cache_read_mult = 0.1
+cache_write_mult = 1.25
+
+[paths]
+puzzles = "data/puzzles"
+materials = "materials"
+transcripts = "experiments/sonnet55-medium/artifacts/transcripts"
+runs = { smoke = "experiments/sonnet55-medium/artifacts/runs_smoke.csv", pilot = "experiments/sonnet55-medium/artifacts/runs_pilot.csv", main = "experiments/sonnet55-medium/artifacts/runs.csv" }
+seed_offset = { smoke = 2000, pilot = 3000, main = 0 }

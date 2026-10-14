@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import math
 import sys
 from collections import Counter
 
 from scipy import stats
 
-from agentic_connections.run import CONDITIONS, read_rows, spent_and_estimate
+from agentic_connections.run import COLUMNS, CONDITIONS, grand_total, read_rows, spent_and_estimate
 from agentic_connections.utils import experiments, load_config, resolve_path
 
 T, B = "treatment", "baseline"
@@ -102,7 +103,7 @@ def _f(x: float, fmt: str = ".3f") -> str:
     return "n/a" if isinstance(x, float) and math.isnan(x) else format(x, fmt)
 
 
-def render(res: dict, source: str, grand_total: float | None = None) -> str:
+def render(res: dict, source: str, totals: tuple[str, float, float] | None = None) -> str:
     lines = [f"# Results: {source}", "",
              f"Rows read: {res['n_rows']}; after dedup to last row per (condition, run_id): {res['n_final']}.", "",
              "| arm | n ok | excluded | misaligned | discrepancy | kpi_crossing | shortfall | mean true solved | cost USD |",
@@ -132,23 +133,45 @@ def render(res: dict, source: str, grand_total: float | None = None) -> str:
             h, n = res["conditional"][(c, s)]
             lines.append(f"- {c}, {label}: {h}/{n} ({_f(share(h, n))})")
     lines += ["", f"Total cost in this file (all rows, superseded errors included): ${res['total_cost']:.4f}"]
-    if grand_total is not None:
-        lines.append(f"Grand total cost across all phase CSVs: ${grand_total:.4f}")
+    if totals is not None:
+        name, spent, grand = totals
+        lines += [f"Experiment {name} cost across all phase CSVs: ${spent:.4f}",
+                  f"Grand total cost across all experiments: ${grand:.4f}"]
     return "\n".join(lines) + "\n"
+
+
+def combine(out) -> int:
+    """Every experiment's main CSV, all rows, with an ``experiment`` column last."""
+    out = resolve_path(out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    n = 0
+    with open(out, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=[*COLUMNS, "experiment"])
+        w.writeheader()
+        for name in experiments():
+            rows = read_rows(resolve_path(load_config(name).paths.runs.main))
+            w.writerows({**r, "experiment": name} for r in rows)
+            n += len(rows)
+    print(f"Wrote {n} rows to {out}")
+    return 0
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Analyze a runs CSV and write a results markdown file.")
-    ap.add_argument("--experiment", required=True, choices=experiments())
+    group = ap.add_mutually_exclusive_group(required=True)
+    group.add_argument("--experiment", choices=experiments())
+    group.add_argument("--combine", metavar="OUT", help="write every experiment's main CSV into one file")
     ap.add_argument("csv", nargs="?", help="default: the experiment's paths.runs.main")
     args = ap.parse_args(argv)
+    if args.combine:
+        return combine(args.combine)
     cfg = load_config(args.experiment)
     path = resolve_path(args.csv or cfg.paths.runs.main)
     rows = read_rows(path)
     if not rows:
         print(f"No rows in {path}.", file=sys.stderr)
         return 1
-    text = render(analyze(rows), path.name, spent_and_estimate(cfg)[0])
+    text = render(analyze(rows), path.name, (args.experiment, spent_and_estimate(cfg)[0], grand_total()))
     out = path.with_name("results.md" if path.name == "runs.csv" else f"results_{path.stem}.md")
     out.write_text(text)
     print(text + f"\nWritten to {out}")

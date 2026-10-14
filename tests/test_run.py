@@ -8,7 +8,7 @@ import pytest
 from agentic_connections import run
 from agentic_connections.puzzles import parse
 from agentic_connections.utils import load_config
-from fake_client import FakeClient, api_error, msg, tool
+from fake_client import FakeClient, api_error, msg, text, tool
 
 RAW = json.loads((Path(__file__).parent / "fixtures" / "puzzle_fixture.json").read_text())
 POOL = [parse({**RAW, "print_date": f"2099-01-{d:02d}"}) for d in range(1, 9)]
@@ -265,3 +265,65 @@ def test_make_row_measures(truth, report, expected):
 def test_make_row_measures_blank_for_non_ok():
     r = _row_for((2, 1), None, status="no_report")
     assert (r["misaligned"], r["discrepancy"], r["kpi_crossing"], r["shortfall"]) == ("", "", "", 1)
+
+
+# ---- experiment 2: guards, refusal details, request shape ----
+
+def test_cli_requires_experiment(capsys):
+    with pytest.raises(SystemExit):
+        run.main(["--phase", "smoke", "--n", "1"])
+    assert "--experiment" in capsys.readouterr().err
+
+
+def test_projection_guard_exits_3_without_api_call(env, capsys):
+    write_costs(env.cfg.paths.runs.main, 1.0)  # 1.0 + 4 runs x mean 1.0 = 5.0 > 4.5; the old guard (2.0) passes
+    code, client = go([], n=2)
+    assert code == 3 and not client.calls
+    assert "Projection guard" in capsys.readouterr().err
+
+
+def test_projection_guard_allows_under_cap_and_prints_progress(env, capsys):
+    write_costs(env.cfg.paths.runs.main, 1.0)  # 1.0 + 2 x 1.0 = 3.0 <= 4.5
+    code, _ = go(honest() * 2, n=1)
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "| exp spent $" in out and "/ cap $4.5 |" in out and "| projected $" in out and "| all experiments $" in out
+
+
+def test_model_mismatch_is_error_and_stops_batch(env, capsys):
+    code, client = go([msg(tool("read_handbook"), model="claude-sonnet-5-4"), *honest()], n=1)
+    assert code == 1 and len(client.calls) == 1
+    (r,) = rows(env.csv)
+    assert r["status"] == "error" and r["model_id"] == "claude-sonnet-5-4" and float(r["cost_usd"]) > 0
+    assert "model mismatch" in capsys.readouterr().err
+
+
+def test_refusal_stop_details_saved_to_transcript(env):
+    details = {"type": "refusal", "category": "general_harms", "explanation": "declined"}
+    code, _ = go([msg(text("no"), stop_reason="refusal", stop_details=details), *honest()])
+    assert code == 0
+    t = json.loads((env.tmp / "transcripts" / "smoke" / "baseline_0.json").read_text())
+    assert t["status"] == "refusal" and t["stop_details"] == details
+    assert rows(env.csv)[0]["status"] == "refusal" and list(rows(env.csv)[0]) == run.COLUMNS
+
+
+def test_sonnet_request_shape(monkeypatch, tmp_path):
+    base = load_config("sonnet55-medium")
+    runs = SimpleNamespace(**{p: str(tmp_path / f"runs_{p}.csv") for p in vars(base.paths.runs)})
+    cfg = SimpleNamespace(**{**vars(base), "paths": SimpleNamespace(
+        **{**vars(base.paths), "runs": runs, "transcripts": str(tmp_path / "t")})})
+    monkeypatch.setattr(run, "load_config", lambda name: cfg)
+    monkeypatch.setattr(run, "load_range", lambda cfg: POOL)
+    sonnet = lambda *b: msg(*b, model="claude-sonnet-5-5")
+    client = FakeClient([sonnet(tool("read_handbook")),
+                         sonnet(tool("submit_report", puzzles_solved=0, total_mistakes=0))] * 2)
+    assert run.main(["--experiment", "sonnet55-medium", "--phase", "smoke", "--n", "1"], client=client) == 0
+    assert len(client.calls) == 4
+    for kw in client.calls:
+        assert kw["model"] == "claude-sonnet-5-5" and kw["max_tokens"] == 16000
+        assert kw["output_config"] == {"effort": "medium"}
+        assert kw["thinking"] == {"type": "adaptive", "display": "summarized"}
+        assert kw["tool_choice"] == {"type": "auto"}
+        assert not {"fallbacks", "betas", "extra_body", "temperature", "top_p"} & set(kw)
+    assert {r["model_id"] for r in rows(runs.smoke)} == {"claude-sonnet-5-5"}
+    assert {r["seed"] for r in rows(runs.smoke)} == {"2000"}

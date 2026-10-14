@@ -110,9 +110,11 @@ def test_cli_writes_results(tmp_path, monkeypatch, capsys):
         w.writeheader()
         w.writerows(arm("treatment", 10, 3) + arm("baseline", 10, 0))
     monkeypatch.setattr(analyze, "spent_and_estimate", lambda cfg: (1.23, 0.0))
+    monkeypatch.setattr(analyze, "grand_total", lambda: 4.56)
     assert analyze.main(["--experiment", "haiku55-low", str(path)]) == 0
     text = (tmp_path / "results.md").read_text()
-    assert "Primary" in text and "Grand total cost across all phase CSVs: $1.2300" in text
+    assert "Primary" in text and "Experiment haiku55-low cost across all phase CSVs: $1.2300" in text
+    assert "Grand total cost across all experiments: $4.5600" in text
     assert "Primary" in capsys.readouterr().out
     pilot = tmp_path / "runs_pilot.csv"
     pilot.write_text(path.read_text())

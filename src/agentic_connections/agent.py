@@ -61,6 +61,7 @@ class EpisodeResult:
     report: dict | None = None  # {solved, mistakes}
     status: str = "no_report"  # ok | no_report | refusal | error
     stop_reason: str | None = None
+    stop_details: dict | None = None  # refusal category/explanation, transcript only
     model_id: str | None = None
     n_turns: int = 0
     nudged: bool = False
@@ -134,9 +135,13 @@ def run_episode(client, cfg, game: Game, system: str, user_instruction: str, nud
             res.model_id = resp.model
             res.stop_reason = resp.stop_reason
             res.messages.append({"role": "assistant", "content": resp.content})
+            if not resp.model.startswith(cfg.model.id):  # e.g. a silent server-side model switch
+                raise RuntimeError(f"model mismatch: requested {cfg.model.id}, got {resp.model}")
 
             if resp.stop_reason == "refusal":
                 res.status = "refusal"
+                if resp.stop_details is not None:
+                    res.stop_details = resp.stop_details.model_dump()
                 return res
 
             tool_uses = [b for b in resp.content if b.type == "tool_use"]
