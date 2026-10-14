@@ -142,29 +142,40 @@ def render(res: dict, source: str, totals: tuple[str, float, float] | None = Non
     return "\n".join(lines) + "\n"
 
 
+def config_diff(ca, cb) -> list[str]:
+    """``table.key`` names that differ in model id/effort, [kpi] and [materials]."""
+    flat = lambda c: {"model.id": c.model.id, "model.effort": c.model.effort,
+                      **{f"{t}.{k}": v for t in ("kpi", "materials") for k, v in vars(getattr(c, t)).items()}}
+    fa, fb = flat(ca), flat(cb)
+    return sorted(k for k in fa.keys() | fb.keys() if fa.get(k) != fb.get(k))
+
+
 def compare(a: str, b: str) -> int:
-    """Pre-registered exploratory A vs B: two-sided Fisher per arm on misaligned and discrepancy."""
-    res = {}
+    """Pre-registered exploratory A vs B: two-sided Fisher on the treatment arm; baseline descriptive."""
+    cfgs, res = {n: load_config(n) for n in (a, b)}, {}
     for name in (a, b):
-        path = resolve_path(load_config(name).paths.runs.main)
+        path = resolve_path(cfgs[name].paths.runs.main)
         rows = read_rows(path)
         if not rows:
             print(f"No rows in {path}.", file=sys.stderr)
             return 1
         res[name] = analyze(rows)  # same dedup / ok-only / blank-is-missing semantics as --experiment
-    lines = [f"# Compare: {a} vs {b}", "", "Exploratory; model × effort. Two-sided Fisher's exact test, "
-             "main CSVs deduped to the last row per (condition, run_id), ok rows only.", ""]
-    for arm, label in (("t", "Treatment arm (pre-registered exploratory)"), ("b", "Baseline arm (descriptive)")):
-        lines += [f"## {label}", ""]
-        for key, name in (("primary", "Favorable misreport (misaligned)"), ("discrepancy", "Discrepancy")):
-            pairs = {e: res[e][key][arm] for e in (a, b)}
-            r = fisher({e: h for e, (h, _) in pairs.items()}, {e: n for e, (_, n) in pairs.items()},
-                       alternative="two-sided", keys=(a, b))
-            (ah, an), (bh, bn) = r["t"], r["b"]
-            lines.append(f"- {name}: {a} {ah}/{an} vs {b} {bh}/{bn}; odds ratio {_f(r['odds_ratio'], '.3g')}, "
-                         f"two-sided Fisher p = {_f(r['p'], '.4g')}")
-        lines.append("")
-    text = "\n".join(lines)
+    fields = (("primary", "Favorable misreport (misaligned)"), ("discrepancy", "Discrepancy"))
+    lines = [f"# Compare: {a} vs {b}", "",
+             f"Exploratory; experiments differ in: {', '.join(config_diff(cfgs[a], cfgs[b])) or 'nothing'}.",
+             "The comparison is exploratory. Discrepancy differences may reflect counting accuracy rather than the KPI.",
+             "Main CSVs deduped to the last row per (condition, run_id), ok rows only.", "",
+             "## Treatment arm (two-sided Fisher, odds ratio A over B)", ""]
+    for key, label in fields:
+        (ah, an), (bh, bn) = res[a][key]["t"], res[b][key]["t"]
+        r = fisher({a: ah, b: bh}, {a: an, b: bn}, alternative="two-sided", keys=(a, b))
+        lines.append(f"- {label}: {a} {ah}/{an} vs {b} {bh}/{bn}; odds ratio {_f(r['odds_ratio'], '.3g')}, "
+                     f"two-sided Fisher p = {_f(r['p'], '.4g')}")
+    lines += ["", "## Baseline arm (descriptive, no test)", ""]
+    for key, label in fields:
+        (ah, an), (bh, bn) = res[a][key]["b"], res[b][key]["b"]
+        lines.append(f"- {label}: {a} {ah}/{an} vs {b} {bh}/{bn}")
+    text = "\n".join(lines) + "\n"
     out = resolve_path(f"dist/compare_{a}_vs_{b}.md")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text)

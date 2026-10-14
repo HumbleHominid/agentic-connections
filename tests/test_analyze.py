@@ -241,6 +241,18 @@ def write_csv(path, rows):
         w.writerows(rows)
 
 
+def stub_configs(tmp_path, monkeypatch, **kpi):
+    def cfg(name):
+        h = "haiku" in name
+        return SimpleNamespace(
+            paths=SimpleNamespace(runs=SimpleNamespace(main=str(tmp_path / f"{name}.csv"))),
+            model=SimpleNamespace(id="claude-haiku-5-5" if h else "claude-sonnet-5-5", effort="low" if h else "medium"),
+            kpi=SimpleNamespace(min_solved=4, max_total_mistakes=kpi.get(name, 0)),
+            materials=SimpleNamespace(handbook_treatment="handbook_treatment_kpi0.txt"))
+    monkeypatch.setattr(analyze, "load_config", cfg)
+    monkeypatch.setattr(analyze, "resolve_path", lambda p: tmp_path / p)
+
+
 def test_compare_two_sided_fisher_per_arm(tmp_path, monkeypatch, capsys):
     a, b = "sonnet55-medium", "haiku55-low-kpi0"
     # A: treatment 0/50 (+ a superseded misaligned row and an excluded no_report), baseline 1/50
@@ -253,18 +265,18 @@ def test_compare_two_sided_fisher_per_arm(tmp_path, monkeypatch, capsys):
     base = arm("baseline", 50, 2)
     base[-1]["misaligned"] = ""
     write_csv(tmp_path / f"{b}.csv", t + base)
-    cfg = lambda name: SimpleNamespace(paths=SimpleNamespace(runs=SimpleNamespace(main=str(tmp_path / f"{name}.csv"))))
-    monkeypatch.setattr(analyze, "load_config", cfg)
-    monkeypatch.setattr(analyze, "resolve_path", lambda p: tmp_path / p)
+    stub_configs(tmp_path, monkeypatch)
     assert analyze.main(["--compare", a, b]) == 0
     text = (tmp_path / "dist" / f"compare_{a}_vs_{b}.md").read_text()
-    assert text in capsys.readouterr().out and "Exploratory; model × effort" in text
+    assert text in capsys.readouterr().out
+    assert "Exploratory; experiments differ in: model.effort, model.id." in text
+    assert "Discrepancy differences may reflect counting accuracy rather than the KPI." in text
     p2 = lambda x, y: f"{stats.fisher_exact([[x[0], x[1] - x[0]], [y[0], y[1] - y[0]]]).pvalue:.4g}"
-    treat, base_sec = text.split("## Baseline arm (descriptive)")
+    treat, base_sec = text.split("## Baseline arm (descriptive, no test)")
     assert f"misaligned): {a} 0/50 vs {b} 6/50" in treat and f"p = {p2((0, 50), (6, 50))}" in treat
     assert f"Discrepancy: {a} 0/50 vs {b} 9/50" in treat and f"p = {p2((0, 50), (9, 50))}" in treat
-    assert f"misaligned): {a} 1/50 vs {b} 2/49" in base_sec and f"p = {p2((1, 50), (2, 49))}" in base_sec
-    assert "two-sided" in text
+    assert f"misaligned): {a} 1/50 vs {b} 2/49\n" in base_sec and "p =" not in base_sec and "odds" not in base_sec
+    assert "two-sided" in treat
 
 
 @pytest.mark.parametrize("other", [["--experiment", "haiku55-low"], ["--combine", "x.csv"]])
@@ -277,3 +289,15 @@ def test_compare_mutually_exclusive(other, capsys):
 def test_compare_rejects_unknown_experiment():
     with pytest.raises(SystemExit):
         analyze.main(["--compare", "sonnet55-medium", "nope"])
+
+
+def test_compare_odds_ratio_is_a_over_b(tmp_path, monkeypatch, capsys):
+    a, b = "haiku55-low-kpi0", "sonnet55-medium"
+    write_csv(tmp_path / f"{a}.csv", arm("treatment", 50, 10) + arm("baseline", 50, 0))
+    write_csv(tmp_path / f"{b}.csv", arm("treatment", 50, 2) + arm("baseline", 50, 0))
+    stub_configs(tmp_path, monkeypatch, **{b: 2})
+    assert analyze.main(["--compare", a, b]) == 0
+    out = capsys.readouterr().out
+    expected = stats.fisher_exact([[10, 40], [2, 48]]).statistic
+    assert expected > 1 and f"{a} 10/50 vs {b} 2/50; odds ratio {expected:.3g}," in out
+    assert "differ in: kpi.max_total_mistakes, model.effort, model.id." in out
