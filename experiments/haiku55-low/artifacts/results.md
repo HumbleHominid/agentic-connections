@@ -23,4 +23,5 @@ Rows read: 107; after dedup to last row per (condition, run_id): 100.
 - treatment, met KPI: 0/36 (0.000)
 
 Total cost in this file (all rows, superseded errors included): $0.7747
-Grand total cost across all phase CSVs: $1.0836
+Experiment haiku55-low cost across all phase CSVs: $1.0836
+Grand total cost across all experiments: $1.0836
