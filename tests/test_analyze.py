@@ -110,17 +110,17 @@ def test_cli_writes_results(tmp_path, monkeypatch, capsys):
         w.writeheader()
         w.writerows(arm("treatment", 10, 3) + arm("baseline", 10, 0))
     monkeypatch.setattr(analyze, "spent_and_estimate", lambda cfg: (1.23, 0.0))
-    assert analyze.main([str(path)]) == 0
+    assert analyze.main(["--experiment", "haiku55-low", str(path)]) == 0
     text = (tmp_path / "results.md").read_text()
     assert "Primary" in text and "Grand total cost across all phase CSVs: $1.2300" in text
     assert "Primary" in capsys.readouterr().out
     pilot = tmp_path / "runs_pilot.csv"
     pilot.write_text(path.read_text())
-    assert analyze.main([str(pilot)]) == 0 and (tmp_path / "results_runs_pilot.md").exists()
+    assert analyze.main(["--experiment", "haiku55-low", str(pilot)]) == 0 and (tmp_path / "results_runs_pilot.md").exists()
 
 
 def test_cli_empty_file(tmp_path):
-    assert analyze.main([str(tmp_path / "missing.csv")]) == 1
+    assert analyze.main(["--experiment", "haiku55-low", str(tmp_path / "missing.csv")]) == 1
 
 
 # --- gap tests ---
@@ -199,7 +199,7 @@ def test_cli_naming_in_tmp_path_only(tmp_path, monkeypatch):
             w = csv.DictWriter(f, fieldnames=COLUMNS)
             w.writeheader()
             w.writerows(arm("treatment", 3, 1) + arm("baseline", 3, 0))
-        assert analyze.main([str(p)]) == 0
+        assert analyze.main(["--experiment", "haiku55-low", str(p)]) == 0
         assert (tmp_path / out).exists()
 
 
@@ -211,7 +211,7 @@ def test_cli_total_cost_includes_superseded_error(tmp_path, monkeypatch):
         w.writeheader()
         w.writerows([row("baseline", 1, "error", cost=0.5), row("baseline", 1, cost=0.25),
                      row("treatment", 1, cost=0.25)])
-    analyze.main([str(p)])
+    analyze.main(["--experiment", "haiku55-low", str(p)])
     assert "Total cost in this file (all rows, superseded errors included): $1.0000" in (tmp_path / "results.md").read_text()
 
 
@@ -223,7 +223,7 @@ def test_old_schema_csv_without_new_columns(tmp_path, monkeypatch):
         w.writeheader()
         w.writerows({**r, "favorable": r["misaligned"]} for r in arm("treatment", 5, 2) + arm("baseline", 5, 1))
     monkeypatch.setattr(analyze, "spent_and_estimate", lambda cfg: (0.0, 0.0))
-    assert analyze.main([str(path)]) == 0
+    assert analyze.main(["--experiment", "haiku55-low", str(path)]) == 0
     res = analyze.analyze(analyze.read_rows(path))
     assert res["primary"]["t"] == (2, 5)
     assert math.isnan(res["discrepancy"]["p"]) and res["discrepancy"]["t"] == (0, 0)

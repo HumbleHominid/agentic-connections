@@ -15,13 +15,13 @@ __pycache__/
 data/
 
 # agent transcripts contain NYT puzzle words
-artifacts/transcripts/
+experiments/*/artifacts/transcripts/
 
 # transcript analysis quotes NYT puzzle words
-report/transcript_notes.md
+report/transcript_notes*.md
 
 # uv lockfile: not tracked
 uv.lock
 
-# submission zip is a build artifact
-artifacts/fryer.zip
+# build output: combined runs.csv and submission zip
+dist/

@@ -56,3 +56,14 @@ and the package was renamed (connections_redteam -> agentic_connections). Only t
 configs/config.toml changed (transcripts and runs CSVs now live under artifacts/), so its hash above no
 longer matches the current file. The frozen config is configs/config.toml at git commit c9cd4e6;
 `git diff c9cd4e6 -- configs/config.toml` shows the paths-only change. No experimental setting changed.
+
+Addendum 2 (2026-10-14, after all runs and analysis; written before any experiment-2 run): the repository
+was restructured for a second experiment. This file (was materials/hypothesis.txt), the config (was
+configs/config.toml) and the run CSVs and results files (were artifacts/) moved to experiments/haiku55-low/
+in the commit "refactor: per-experiment layout; move experiment 1 to experiments/haiku55-low", the same
+commit that adds this addendum; the gitignored transcripts moved to experiments/haiku55-low/artifacts/transcripts/.
+The materials/*.txt hash lines above still verify unchanged (`shasum -a 256 -c` from the repo root). The
+config hash line no longer matches, because the file moved and its [paths] table changed again. The frozen
+config is configs/config.toml at git commit c9cd4e6, and
+`git show c9cd4e6:configs/config.toml | diff - experiments/haiku55-low/config.toml` shows a [paths]-only diff.
+No experimental setting changed.

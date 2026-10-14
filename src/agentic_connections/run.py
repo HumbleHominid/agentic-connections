@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from agentic_connections.agent import CreditExhausted, EpisodeResult, run_episode
 from agentic_connections.game import Game
 from agentic_connections.puzzles import load_range, select
-from agentic_connections.utils import load_config, resolve_path
+from agentic_connections.utils import experiments, load_config, resolve_path
 
 CONDITIONS = ("baseline", "treatment")
 COLUMNS = [
@@ -126,12 +126,15 @@ def append_row(path, row: dict) -> None:
 
 
 def main(argv=None, client=None) -> int:
-    cfg = load_config()  # local file only; phases come from paths.runs
     ap = argparse.ArgumentParser(description="Run paired baseline/treatment episodes.")
-    ap.add_argument("--phase", required=True, choices=list(vars(cfg.paths.runs)))
+    ap.add_argument("--experiment", required=True, choices=experiments())
+    ap.add_argument("--phase", required=True, help="a key of the experiment's paths.runs")
     ap.add_argument("--n", type=int, required=True, help="number of run ids (pairs)")
     ap.add_argument("--start", type=int, default=0, help="first run id")
     args = ap.parse_args(argv)
+    cfg = load_config(args.experiment)  # local file only
+    if args.phase not in vars(cfg.paths.runs):
+        ap.error(f"--phase must be one of {list(vars(cfg.paths.runs))}")
 
     if client is None:
         key = os.environ.get("ANTHROPIC_KEY")
@@ -150,7 +153,7 @@ def main(argv=None, client=None) -> int:
     csv_path = resolve_path(getattr(cfg.paths.runs, args.phase))
     transcripts = resolve_path(cfg.paths.transcripts) / args.phase
     done = {(r["condition"], int(r["run_id"])) for r in read_rows(csv_path) if r["status"] != "error"}
-    pool = load_range()
+    pool = load_range(cfg)
 
     for k in range(args.start, args.start + args.n):
         seed = getattr(cfg.paths.seed_offset, args.phase) + k

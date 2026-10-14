@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 
-from agentic_connections.utils import cached, load_config
+from agentic_connections.utils import cached
 
 URL = "https://www.nytimes.com/svc/connections/v2/{date}.json"
 USER_AGENT = "agentic-connections research script"
@@ -34,10 +34,10 @@ def _download_valid(day: str) -> dict:
     return raw
 
 
-def fetch(day: str, *, force: bool = False) -> dict:
-    """Raw puzzle JSON for ``day`` (YYYY-MM-DD), cached at ``<paths.puzzles>/<day>.json``."""
+def fetch(day: str, folder: str | Path, *, force: bool = False) -> dict:
+    """Raw puzzle JSON for ``day`` (YYYY-MM-DD), cached at ``<folder>/<day>.json``."""
     return cached(
-        Path(load_config().paths.puzzles) / f"{day}.json",
+        Path(folder) / f"{day}.json",
         lambda: _download_valid(day),
         lambda p: json.loads(p.read_text()),
         lambda obj, p: p.write_text(json.dumps(obj)),
@@ -56,17 +56,16 @@ def parse(raw: dict) -> Puzzle:
     return Puzzle(date=raw["print_date"], id=raw["id"], groups=groups)
 
 
-def load_range() -> list[Puzzle]:
+def load_range(cfg) -> list[Puzzle]:
     """Every puzzle in ``[game.date_start, game.date_end]``.
 
     Any fetch or parse failure raises: a silently smaller pool would let the same
     seed select different puzzles on a re-run.
     """
-    cfg = load_config()
     day, end = date.fromisoformat(cfg.game.date_start), date.fromisoformat(cfg.game.date_end)
     puzzles = []
     while day <= end:
-        puzzles.append(parse(fetch(day.isoformat())))
+        puzzles.append(parse(fetch(day.isoformat(), cfg.paths.puzzles)))
         day += timedelta(days=1)
     return sorted(puzzles, key=lambda p: p.date)
 

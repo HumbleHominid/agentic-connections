@@ -35,10 +35,9 @@ def test_load_range_uses_cache_and_raises_on_fetch_failure(tmp_path, monkeypatch
         game=SimpleNamespace(date_start="2099-01-01", date_end="2099-01-03"),
         paths=SimpleNamespace(puzzles=str(tmp_path)),
     )
-    monkeypatch.setattr(puzzles, "load_config", lambda: cfg)
     (tmp_path / "2099-01-03.json").write_text(json.dumps({**FIXTURE, "print_date": "2099-01-03"}))
     monkeypatch.setattr(puzzles, "_download", lambda day: {**FIXTURE, "print_date": day})
-    assert [p.date for p in puzzles.load_range()] == ["2099-01-01", "2099-01-02", "2099-01-03"]
+    assert [p.date for p in puzzles.load_range(cfg)] == ["2099-01-01", "2099-01-02", "2099-01-03"]
 
     def fail_02(day):
         if day == "2099-01-02":
@@ -48,7 +47,7 @@ def test_load_range_uses_cache_and_raises_on_fetch_failure(tmp_path, monkeypatch
     (tmp_path / "2099-01-02.json").unlink()
     monkeypatch.setattr(puzzles, "_download", fail_02)
     with pytest.raises(OSError):
-        puzzles.load_range()
+        puzzles.load_range(cfg)
     assert not (tmp_path / "2099-01-02.json").exists()
 
 
@@ -90,31 +89,28 @@ def test_select_is_subset_and_full_size_is_permutation():
 
 
 def test_fetch_caches_and_force_redownloads(tmp_path, monkeypatch):
-    monkeypatch.setattr(puzzles, "load_config", lambda: SimpleNamespace(paths=SimpleNamespace(puzzles=str(tmp_path))))
     calls = []
     monkeypatch.setattr(puzzles, "_download", lambda day: calls.append(day) or {**FIXTURE, "id": len(calls)})
-    assert puzzles.fetch("2099-01-01")["id"] == 1
-    assert puzzles.fetch("2099-01-01")["id"] == 1
-    assert puzzles.fetch("2099-01-01", force=True)["id"] == 2
+    assert puzzles.fetch("2099-01-01", tmp_path)["id"] == 1
+    assert puzzles.fetch("2099-01-01", tmp_path)["id"] == 1
+    assert puzzles.fetch("2099-01-01", tmp_path, force=True)["id"] == 2
     assert len(calls) == 2
 
 
 def test_load_range_raises_on_malformed_puzzle_and_caches_nothing(tmp_path, monkeypatch):
     cfg = SimpleNamespace(game=SimpleNamespace(date_start="2099-01-01", date_end="2099-01-02"),
                           paths=SimpleNamespace(puzzles=str(tmp_path)))
-    monkeypatch.setattr(puzzles, "load_config", lambda: cfg)
     monkeypatch.setattr(puzzles, "_download",
                         lambda day: _raw([["a"] * 4] * 3) if day.endswith("01") else {**FIXTURE, "print_date": day})
     with pytest.raises(ValueError):
-        puzzles.load_range()
+        puzzles.load_range(cfg)
     assert not list(tmp_path.iterdir())
 
 
 def test_fetch_rejects_non_ok_status(tmp_path, monkeypatch):
-    monkeypatch.setattr(puzzles, "load_config", lambda: SimpleNamespace(paths=SimpleNamespace(puzzles=str(tmp_path))))
     monkeypatch.setattr(puzzles, "_download", lambda day: {**FIXTURE, "status": "ERROR"})
     with pytest.raises(ValueError):
-        puzzles.fetch("2099-01-01")
+        puzzles.fetch("2099-01-01", tmp_path)
     assert not list(tmp_path.iterdir())
 
 
@@ -127,5 +123,4 @@ def test_parse_rejects_repeated_words_after_normalisation():
 def test_load_range_empty_when_end_before_start(tmp_path, monkeypatch):
     cfg = SimpleNamespace(game=SimpleNamespace(date_start="2099-01-02", date_end="2099-01-01"),
                           paths=SimpleNamespace(puzzles=str(tmp_path)))
-    monkeypatch.setattr(puzzles, "load_config", lambda: cfg)
-    assert puzzles.load_range() == []
+    assert puzzles.load_range(cfg) == []

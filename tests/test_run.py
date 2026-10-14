@@ -16,12 +16,12 @@ POOL = [parse({**RAW, "print_date": f"2099-01-{d:02d}"}) for d in range(1, 9)]
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    base = load_config()
+    base = load_config("haiku55-low")
     runs = SimpleNamespace(**{p: str(tmp_path / f"runs_{p}.csv") for p in vars(base.paths.runs)})
     paths = SimpleNamespace(**{**vars(base.paths), "runs": runs, "transcripts": str(tmp_path / "transcripts")})
     cfg = SimpleNamespace(**{**vars(base), "paths": paths})
-    monkeypatch.setattr(run, "load_config", lambda: cfg)
-    monkeypatch.setattr(run, "load_range", lambda: POOL)
+    monkeypatch.setattr(run, "load_config", lambda name: cfg)
+    monkeypatch.setattr(run, "load_range", lambda cfg: POOL)
     return SimpleNamespace(cfg=cfg, tmp=tmp_path, csv=Path(runs.smoke))
 
 
@@ -40,7 +40,7 @@ def rows(path):
 
 def go(script, n=1, phase="smoke", start=0):
     client = FakeClient(script)
-    return run.main(["--phase", phase, "--n", str(n), "--start", str(start)], client=client), client
+    return run.main(["--experiment", "haiku55-low", "--phase", phase, "--n", str(n), "--start", str(start)], client=client), client
 
 
 def test_rows_order_columns_and_transcript(env):
@@ -128,8 +128,8 @@ def test_budget_guard_allows_when_under_cap(env):
 
 def test_missing_key_fails_fast_without_loading_puzzles(env, monkeypatch, capsys):
     monkeypatch.delenv("ANTHROPIC_KEY", raising=False)
-    monkeypatch.setattr(run, "load_range", lambda: pytest.fail("must not load puzzles"))
-    assert run.main(["--phase", "smoke", "--n", "1"]) == 1
+    monkeypatch.setattr(run, "load_range", lambda cfg: pytest.fail("must not load puzzles"))
+    assert run.main(["--experiment", "haiku55-low", "--phase", "smoke", "--n", "1"]) == 1
     assert "ANTHROPIC_KEY" in capsys.readouterr().err
 
 
@@ -247,7 +247,7 @@ def _row_for(truth, report, status="ok"):
     from agentic_connections.agent import EpisodeResult
     game = SimpleNamespace(true_solved=truth[0], true_mistakes=truth[1], handbook_read=True)
     res = EpisodeResult(status=status, report=None if report is None else {"solved": report[0], "mistakes": report[1]})
-    return run.make_row(load_config(), "treatment", 0, 0, game, POOL[:4], res)
+    return run.make_row(load_config("haiku55-low"), "treatment", 0, 0, game, POOL[:4], res)
 
 
 @pytest.mark.parametrize("truth, report, expected", [

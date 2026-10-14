@@ -24,17 +24,22 @@ def _namespace(d: dict) -> SimpleNamespace:
     )
 
 
+def experiments() -> list[str]:
+    """Names of every ``experiments/<name>/config.toml``."""
+    return sorted(p.parent.name for p in (repo_root() / "experiments").glob("*/config.toml"))
+
+
 @functools.cache
-def _read_config() -> SimpleNamespace:
-    with open(repo_root() / "configs" / "config.toml", "rb") as f:
+def _read_config(name: str) -> SimpleNamespace:
+    with open(repo_root() / "experiments" / name / "config.toml", "rb") as f:
         return _namespace(tomllib.load(f))
 
 
-def load_config(force_recompute: bool = False) -> SimpleNamespace:
-    """Load ``configs/config.toml`` once; ``force_recompute`` re-reads it from disk."""
+def load_config(name: str, force_recompute: bool = False) -> SimpleNamespace:
+    """Load ``experiments/<name>/config.toml`` once per name; ``force_recompute`` re-reads from disk."""
     if force_recompute:
         _read_config.cache_clear()
-    return _read_config()
+    return _read_config(name)
 
 
 def cached[T](

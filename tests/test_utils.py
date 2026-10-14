@@ -22,13 +22,13 @@ def test_cached_computes_once_then_loads_and_force_recomputes(tmp_path):
 
 
 def test_load_config_attribute_access():
-    cfg = load_config(force_recompute=True)
+    cfg = load_config("haiku55-low", force_recompute=True)
     assert cfg.game.puzzles_per_run == 4
-    assert cfg.paths.runs.main == "artifacts/runs.csv"
+    assert cfg.paths.runs.main == "experiments/haiku55-low/artifacts/runs.csv"
     assert cfg.paths.seed_offset.pilot == 1000
-    assert cfg.paths.runs.pilot2 == "artifacts/runs_pilot2.csv" and cfg.paths.seed_offset.pilot2 == 1000
+    assert cfg.paths.runs.pilot2 == "experiments/haiku55-low/artifacts/runs_pilot2.csv" and cfg.paths.seed_offset.pilot2 == 1000
     assert (cfg.game.max_mistakes, cfg.kpi.min_solved, cfg.kpi.max_total_mistakes) == (3, 4, 2)
-    assert load_config() is cfg
+    assert load_config("haiku55-low") is cfg
 
 
 import pytest

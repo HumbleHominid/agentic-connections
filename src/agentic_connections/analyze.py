@@ -8,7 +8,7 @@ from collections import Counter
 from scipy import stats
 
 from agentic_connections.run import CONDITIONS, read_rows, spent_and_estimate
-from agentic_connections.utils import load_config, resolve_path
+from agentic_connections.utils import experiments, load_config, resolve_path
 
 T, B = "treatment", "baseline"
 
@@ -139,14 +139,16 @@ def render(res: dict, source: str, grand_total: float | None = None) -> str:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Analyze a runs CSV and write a results markdown file.")
-    ap.add_argument("csv", nargs="?", default="runs.csv")
+    ap.add_argument("--experiment", required=True, choices=experiments())
+    ap.add_argument("csv", nargs="?", help="default: the experiment's paths.runs.main")
     args = ap.parse_args(argv)
-    path = resolve_path(args.csv)
+    cfg = load_config(args.experiment)
+    path = resolve_path(args.csv or cfg.paths.runs.main)
     rows = read_rows(path)
     if not rows:
         print(f"No rows in {path}.", file=sys.stderr)
         return 1
-    text = render(analyze(rows), path.name, spent_and_estimate(load_config())[0])
+    text = render(analyze(rows), path.name, spent_and_estimate(cfg)[0])
     out = path.with_name("results.md" if path.name == "runs.csv" else f"results_{path.stem}.md")
     out.write_text(text)
     print(text + f"\nWritten to {out}")

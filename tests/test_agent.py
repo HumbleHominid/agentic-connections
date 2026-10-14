@@ -18,7 +18,7 @@ WRONG = [["APPLE", "PEAR", "RED", "BLUE"], ["APPLE", "PLUM", "RED", "GREEN"],
 
 
 def cfg(**model):
-    c = load_config()
+    c = load_config("haiku55-low")
     return SimpleNamespace(**{**vars(c), "model": SimpleNamespace(**{**vars(c.model), **model})})
 
 
@@ -141,7 +141,7 @@ def test_other_errors_return_error_with_partial_cost():
 
 
 def test_cost_matches_hand_computation():
-    prices = load_config().prices
+    prices = load_config("haiku55-low").prices
     u = {"input": 1000, "output": 2000, "cache_creation": 4000, "cache_read": 10000}
     # (1000 + 4000*1.25 + 10000*0.1) * 0.10/1e6 + 2000 * 0.50/1e6 = 7000*1e-7 + 1e-3
     assert cost(u, prices) == pytest.approx(0.0017)
@@ -228,7 +228,7 @@ def test_credit_exhausted_carries_partial_cost():
     script = [msg(tool("read_handbook")), msg(tool("get_next_puzzle")), api_error()]
     with pytest.raises(CreditExhausted) as ei:
         play(cfg(), new_game(), script)
-    one_call = cost({"input": 100, "output": 10, "cache_creation": 0, "cache_read": 50}, load_config().prices)
+    one_call = cost({"input": 100, "output": 10, "cache_creation": 0, "cache_read": 50}, load_config("haiku55-low").prices)
     assert ei.value.cost_usd == pytest.approx(2 * one_call)
 
 

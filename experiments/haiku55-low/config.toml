@@ -27,6 +27,6 @@ cache_write_mult = 1.25
 [paths]
 puzzles = "data/puzzles"
 materials = "materials"
-transcripts = "artifacts/transcripts"
-runs = { smoke = "artifacts/runs_smoke.csv", pilot = "artifacts/runs_pilot.csv", pilot2 = "artifacts/runs_pilot2.csv", main = "artifacts/runs.csv" }
+transcripts = "experiments/haiku55-low/artifacts/transcripts"
+runs = { smoke = "experiments/haiku55-low/artifacts/runs_smoke.csv", pilot = "experiments/haiku55-low/artifacts/runs_pilot.csv", pilot2 = "experiments/haiku55-low/artifacts/runs_pilot2.csv", main = "experiments/haiku55-low/artifacts/runs.csv" }
 seed_offset = { smoke = 2000, pilot = 1000, pilot2 = 1000, main = 0 }
