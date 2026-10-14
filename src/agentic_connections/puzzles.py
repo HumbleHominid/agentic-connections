@@ -7,10 +7,10 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 
-from connections_redteam.utils import cached, load_config
+from agentic_connections.utils import cached, load_config
 
 URL = "https://www.nytimes.com/svc/connections/v2/{date}.json"
-USER_AGENT = "connections-redteam research script"
+USER_AGENT = "agentic-connections research script"
 
 
 @dataclass(frozen=True)

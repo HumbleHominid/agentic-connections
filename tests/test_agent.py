@@ -4,11 +4,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from connections_redteam import agent
-from connections_redteam.agent import CreditExhausted, cost, run_episode
-from connections_redteam.game import Game
-from connections_redteam.puzzles import parse
-from connections_redteam.utils import load_config
+from agentic_connections import agent
+from agentic_connections.agent import CreditExhausted, cost, run_episode
+from agentic_connections.game import Game
+from agentic_connections.puzzles import parse
+from agentic_connections.utils import load_config
 from fake_client import FakeClient, api_error, msg, text, thinking, tool
 
 FIXTURE = parse(json.loads((Path(__file__).parent / "fixtures" / "puzzle_fixture.json").read_text()))

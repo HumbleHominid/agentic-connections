@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from connections_redteam.game import Game
-from connections_redteam.puzzles import parse
+from agentic_connections.game import Game
+from agentic_connections.puzzles import parse
 
 FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "puzzle_fixture.json").read_text())
 FRUITS = ["apple", "pear", "plum", "fig"]

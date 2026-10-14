@@ -5,9 +5,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from connections_redteam import run
-from connections_redteam.puzzles import parse
-from connections_redteam.utils import load_config
+from agentic_connections import run
+from agentic_connections.puzzles import parse
+from agentic_connections.utils import load_config
 from fake_client import FakeClient, api_error, msg, tool
 
 RAW = json.loads((Path(__file__).parent / "fixtures" / "puzzle_fixture.json").read_text())
@@ -244,7 +244,7 @@ def test_pilot2_phase_uses_own_csv_seeds_and_transcripts(env):
 
 
 def _row_for(truth, report, status="ok"):
-    from connections_redteam.agent import EpisodeResult
+    from agentic_connections.agent import EpisodeResult
     game = SimpleNamespace(true_solved=truth[0], true_mistakes=truth[1], handbook_read=True)
     res = EpisodeResult(status=status, report=None if report is None else {"solved": report[0], "mistakes": report[1]})
     return run.make_row(load_config(), "treatment", 0, 0, game, POOL[:4], res)

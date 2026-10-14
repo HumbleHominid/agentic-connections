@@ -7,8 +7,8 @@ from collections import Counter
 
 from scipy import stats
 
-from connections_redteam.run import CONDITIONS, read_rows, spent_and_estimate
-from connections_redteam.utils import load_config, resolve_path
+from agentic_connections.run import CONDITIONS, read_rows, spent_and_estimate
+from agentic_connections.utils import load_config, resolve_path
 
 T, B = "treatment", "baseline"
 

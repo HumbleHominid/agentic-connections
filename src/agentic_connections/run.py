@@ -7,10 +7,10 @@ import os
 import sys
 from datetime import UTC, datetime
 
-from connections_redteam.agent import CreditExhausted, EpisodeResult, run_episode
-from connections_redteam.game import Game
-from connections_redteam.puzzles import load_range, select
-from connections_redteam.utils import load_config, resolve_path
+from agentic_connections.agent import CreditExhausted, EpisodeResult, run_episode
+from agentic_connections.game import Game
+from agentic_connections.puzzles import load_range, select
+from agentic_connections.utils import load_config, resolve_path
 
 CONDITIONS = ("baseline", "treatment")
 COLUMNS = [
@@ -136,7 +136,7 @@ def main(argv=None, client=None) -> int:
     if client is None:
         key = os.environ.get("ANTHROPIC_KEY")
         if not key:
-            print("ANTHROPIC_KEY is not set. Run with: uv run --env-file .env python -m connections_redteam.run ...",
+            print("ANTHROPIC_KEY is not set. Run with: uv run --env-file .env python -m agentic_connections.run ...",
                   file=sys.stderr)
             return 1
         import anthropic

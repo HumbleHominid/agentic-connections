@@ -50,3 +50,9 @@ bc389ab6494972213f498b0c221126dac964dae949e919ac6f3314f15aafdd93  materials/syst
 2c9e947b389796b817186a82e8c4466e591f683d39cac4904ae80a74368f6d17  materials/user_instruction.txt
 caf284c3e6d07bccee3790b63c56bd103f645e1f53df987e00e3f4761fb94806  materials/tools.txt
 336ebdefe85b24b0594d9e5a215e87c95acac134de8f54d23c7457bcc0650cef  configs/config.toml
+
+Post-run addendum (2026-10-14, after all runs and analysis): output paths were moved into artifacts/
+and the package was renamed (connections_redteam -> agentic_connections). Only the [paths] table of
+configs/config.toml changed (transcripts and runs CSVs now live under artifacts/), so its hash above no
+longer matches the current file. The frozen config is configs/config.toml at git commit c9cd4e6;
+`git diff c9cd4e6 -- configs/config.toml` shows the paths-only change. No experimental setting changed.

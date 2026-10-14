@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from connections_redteam import puzzles
+from agentic_connections import puzzles
 
 FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "puzzle_fixture.json").read_text())
 

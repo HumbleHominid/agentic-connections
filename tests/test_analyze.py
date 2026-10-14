@@ -5,8 +5,8 @@ from types import SimpleNamespace
 import pytest
 from scipy import stats
 
-from connections_redteam import analyze
-from connections_redteam.run import COLUMNS
+from agentic_connections import analyze
+from agentic_connections.run import COLUMNS
 
 
 def row(cond, k, status="ok", mis=0, disc=None, kpi=0, solved=2, short=1, cost=0.01):
@@ -165,7 +165,7 @@ def test_refusal_excluded_from_primary_and_sensitivity():
 
 
 def test_csv_written_by_run_append_row_roundtrips(tmp_path):
-    from connections_redteam.run import append_row, read_rows
+    from agentic_connections.run import append_row, read_rows
     p = tmp_path / "runs.csv"
     rows = ([row("treatment", i, mis=int(i < 2)) for i in range(4)]
             + [row("baseline", i, mis=0) for i in range(4)]

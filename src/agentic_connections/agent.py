@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import anthropic
 
-from connections_redteam.game import Game
+from agentic_connections.game import Game
 
 TOOLS = [
     {

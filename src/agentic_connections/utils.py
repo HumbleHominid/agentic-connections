@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 
 def repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]  # src/connections_redteam/utils.py
+    return Path(__file__).resolve().parents[2]  # src/agentic_connections/utils.py
 
 
 def resolve_path(value: str | Path) -> Path:
