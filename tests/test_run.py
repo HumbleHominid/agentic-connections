@@ -420,3 +420,9 @@ def test_sonnet_model_mismatch_is_error_row_and_stops(sonnet_env, capsys):
 def test_model_id_prefix_without_separator_is_rejected(sonnet_env):
     sgo([msg(tool("read_handbook"), model="claude-sonnet-5-55"), *sonnet_honest()] * 2)
     assert rows(sonnet_env.tmp / "runs_smoke.csv")[0]["status"] == "error"
+
+
+def test_append_row_creates_missing_artifacts_dir(tmp_path):
+    path = tmp_path / "experiments" / "new" / "artifacts" / "runs.csv"
+    run.append_row(path, {c: "" for c in run.COLUMNS})
+    assert path.exists() and path.read_text().startswith("condition,")

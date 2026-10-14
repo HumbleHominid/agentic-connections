@@ -127,6 +127,7 @@ def transcript_path(folder, condition, k, status):
 
 def append_row(path, row: dict) -> None:
     new = not path.exists()
+    path.parent.mkdir(parents=True, exist_ok=True)  # a new experiment has no artifacts/ dir yet
     with open(path, "a", newline="") as f:
         w = csv.DictWriter(f, fieldnames=COLUMNS)
         if new:
