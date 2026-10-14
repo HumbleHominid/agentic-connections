@@ -230,3 +230,50 @@ def test_old_schema_csv_without_new_columns(tmp_path, monkeypatch):
     assert res["primary"]["t"] == (2, 5)
     assert math.isnan(res["discrepancy"]["p"]) and res["discrepancy"]["t"] == (0, 0)
     assert math.isnan(res["table"]["baseline"]["kpi_crossing"])
+
+
+# ---- --compare: exploratory A vs B ----
+
+def write_csv(path, rows):
+    with open(path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=COLUMNS)
+        w.writeheader()
+        w.writerows(rows)
+
+
+def test_compare_two_sided_fisher_per_arm(tmp_path, monkeypatch, capsys):
+    a, b = "sonnet55-medium", "haiku55-low-kpi0"
+    # A: treatment 0/50 (+ a superseded misaligned row and an excluded no_report), baseline 1/50
+    write_csv(tmp_path / f"{a}.csv", [row("treatment", 0, mis=1)] + arm("treatment", 50, 0)
+              + [row("treatment", 50, status="no_report")] + arm("baseline", 50, 1))
+    # B: treatment 6/50 misaligned, 9/50 discrepancy (3 honest slips); baseline 2/50, one blank flag
+    t = arm("treatment", 50, 6)
+    for r in t[6:9]:
+        r["discrepancy"] = "1"
+    base = arm("baseline", 50, 2)
+    base[-1]["misaligned"] = ""
+    write_csv(tmp_path / f"{b}.csv", t + base)
+    cfg = lambda name: SimpleNamespace(paths=SimpleNamespace(runs=SimpleNamespace(main=str(tmp_path / f"{name}.csv"))))
+    monkeypatch.setattr(analyze, "load_config", cfg)
+    monkeypatch.setattr(analyze, "resolve_path", lambda p: tmp_path / p)
+    assert analyze.main(["--compare", a, b]) == 0
+    text = (tmp_path / "dist" / f"compare_{a}_vs_{b}.md").read_text()
+    assert text in capsys.readouterr().out and "Exploratory; model × effort" in text
+    p2 = lambda x, y: f"{stats.fisher_exact([[x[0], x[1] - x[0]], [y[0], y[1] - y[0]]]).pvalue:.4g}"
+    treat, base_sec = text.split("## Baseline arm (descriptive)")
+    assert f"misaligned): {a} 0/50 vs {b} 6/50" in treat and f"p = {p2((0, 50), (6, 50))}" in treat
+    assert f"Discrepancy: {a} 0/50 vs {b} 9/50" in treat and f"p = {p2((0, 50), (9, 50))}" in treat
+    assert f"misaligned): {a} 1/50 vs {b} 2/49" in base_sec and f"p = {p2((1, 50), (2, 49))}" in base_sec
+    assert "two-sided" in text
+
+
+@pytest.mark.parametrize("other", [["--experiment", "haiku55-low"], ["--combine", "x.csv"]])
+def test_compare_mutually_exclusive(other, capsys):
+    with pytest.raises(SystemExit) as e:
+        analyze.main(["--compare", "sonnet55-medium", "haiku55-low-kpi0", *other])
+    assert e.value.code == 2 and "not allowed with" in capsys.readouterr().err
+
+
+def test_compare_rejects_unknown_experiment():
+    with pytest.raises(SystemExit):
+        analyze.main(["--compare", "sonnet55-medium", "nope"])

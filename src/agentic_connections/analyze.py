@@ -31,11 +31,13 @@ def share(hits: int, n: int) -> float:
     return hits / n if n else math.nan
 
 
-def fisher(hits: dict[str, int], n: dict[str, int]) -> dict:
-    """One-sided Fisher, treatment row first, H1: treatment rate greater."""
-    out = {"t": (hits[T], n[T]), "b": (hits[B], n[B]), "odds_ratio": math.nan, "p": math.nan}
-    if n[T] and n[B]:
-        res = stats.fisher_exact([[hits[T], n[T] - hits[T]], [hits[B], n[B] - hits[B]]], alternative="greater")
+def fisher(hits: dict[str, int], n: dict[str, int], alternative: str = "greater", keys=(T, B)) -> dict:
+    """Fisher's exact, ``keys[0]`` row first (default: one-sided, H1 treatment rate greater).
+    Output keys "t"/"b" mean first/second row."""
+    x, y = keys
+    out = {"t": (hits[x], n[x]), "b": (hits[y], n[y]), "odds_ratio": math.nan, "p": math.nan}
+    if n[x] and n[y]:
+        res = stats.fisher_exact([[hits[x], n[x] - hits[x]], [hits[y], n[y] - hits[y]]], alternative=alternative)
         out["odds_ratio"], out["p"] = float(res.statistic), float(res.pvalue)
     return out
 
@@ -140,6 +142,36 @@ def render(res: dict, source: str, totals: tuple[str, float, float] | None = Non
     return "\n".join(lines) + "\n"
 
 
+def compare(a: str, b: str) -> int:
+    """Pre-registered exploratory A vs B: two-sided Fisher per arm on misaligned and discrepancy."""
+    res = {}
+    for name in (a, b):
+        path = resolve_path(load_config(name).paths.runs.main)
+        rows = read_rows(path)
+        if not rows:
+            print(f"No rows in {path}.", file=sys.stderr)
+            return 1
+        res[name] = analyze(rows)  # same dedup / ok-only / blank-is-missing semantics as --experiment
+    lines = [f"# Compare: {a} vs {b}", "", "Exploratory; model × effort. Two-sided Fisher's exact test, "
+             "main CSVs deduped to the last row per (condition, run_id), ok rows only.", ""]
+    for arm, label in (("t", "Treatment arm (pre-registered exploratory)"), ("b", "Baseline arm (descriptive)")):
+        lines += [f"## {label}", ""]
+        for key, name in (("primary", "Favorable misreport (misaligned)"), ("discrepancy", "Discrepancy")):
+            pairs = {e: res[e][key][arm] for e in (a, b)}
+            r = fisher({e: h for e, (h, _) in pairs.items()}, {e: n for e, (_, n) in pairs.items()},
+                       alternative="two-sided", keys=(a, b))
+            (ah, an), (bh, bn) = r["t"], r["b"]
+            lines.append(f"- {name}: {a} {ah}/{an} vs {b} {bh}/{bn}; odds ratio {_f(r['odds_ratio'], '.3g')}, "
+                         f"two-sided Fisher p = {_f(r['p'], '.4g')}")
+        lines.append("")
+    text = "\n".join(lines)
+    out = resolve_path(f"dist/compare_{a}_vs_{b}.md")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(text)
+    print(text + f"\nWritten to {out}")
+    return 0
+
+
 def combine(out) -> int:
     """Every experiment's main CSV, all rows, with an ``experiment`` column last."""
     out = resolve_path(out).resolve()
@@ -172,10 +204,14 @@ def main(argv=None) -> int:
     group = ap.add_mutually_exclusive_group(required=True)
     group.add_argument("--experiment", choices=experiments())
     group.add_argument("--combine", metavar="OUT", help="write every experiment's main CSV into one file")
+    group.add_argument("--compare", nargs=2, metavar=("A", "B"), choices=experiments(),
+                       help="exploratory two-sided Fisher of experiment A vs B on their main CSVs")
     ap.add_argument("csv", nargs="?", help="default: the experiment's paths.runs.main")
     args = ap.parse_args(argv)
     if args.combine:
         return combine(args.combine)
+    if args.compare:
+        return compare(*args.compare)
     cfg = load_config(args.experiment)
     path = resolve_path(args.csv or cfg.paths.runs.main)
     rows = read_rows(path)
