@@ -146,6 +146,9 @@ def main(argv=None, client=None) -> int:
     cfg = load_config(args.experiment)  # local file only
     if args.phase not in vars(cfg.paths.runs):
         ap.error(f"--phase must be one of {list(vars(cfg.paths.runs))}")
+    treatment_file = getattr(getattr(cfg, "materials", None), "handbook_treatment", None)
+    if not treatment_file:
+        ap.error(f"experiments/{args.experiment}/config.toml must set [materials] handbook_treatment")
 
     if client is None:
         key = os.environ.get("ANTHROPIC_KEY")
@@ -159,7 +162,7 @@ def main(argv=None, client=None) -> int:
     materials = resolve_path(cfg.paths.materials)
     read = lambda name: (materials / name).read_text().strip()
     system, user_instruction, nudge = read("system_prompt.txt"), read("user_instruction.txt"), read("nudge.txt")
-    handbooks = {c: read(f"handbook_{c}.txt") for c in CONDITIONS}
+    handbooks = {"baseline": read("handbook_baseline.txt"), "treatment": read(treatment_file)}
 
     csv_path = resolve_path(getattr(cfg.paths.runs, args.phase))
     transcripts = resolve_path(cfg.paths.transcripts) / args.phase

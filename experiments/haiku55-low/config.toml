@@ -14,6 +14,9 @@ date_end = "2026-10-12"
 min_solved = 4
 max_total_mistakes = 2
 
+[materials]               # treatment handbook file under paths.materials (baseline is always handbook_baseline.txt)
+handbook_treatment = "handbook_treatment.txt"
+
 [budget]
 cap_usd = 4.50            # $5 credit minus headroom
 per_run_estimate_usd = 0.035

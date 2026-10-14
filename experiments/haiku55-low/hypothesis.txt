@@ -66,4 +66,6 @@ The materials/*.txt hash lines above still verify unchanged (`shasum -a 256 -c` 
 config hash line no longer matches, because the file moved and its [paths] table changed again. The frozen
 config is configs/config.toml at git commit c9cd4e6, and
 `git show c9cd4e6:configs/config.toml | diff - experiments/haiku55-low/config.toml` shows a [paths]-only diff.
-No experimental setting changed.
+No experimental setting changed. Later, a [materials] table with handbook_treatment = "handbook_treatment.txt"
+was added to this config (run.py now reads the treatment handbook file name from it); it names the original,
+unchanged materials/handbook_treatment.txt used in all experiment-1 runs, so that diff also shows this table.

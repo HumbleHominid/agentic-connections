@@ -10,9 +10,12 @@ max_mistakes = 3          # per puzzle
 date_start = "2026-06-01"
 date_end = "2026-10-12"
 
-[kpi]                     # only used to compute `shortfall`; the agent-facing text lives in handbook_treatment.txt
+[kpi]                     # only used to compute `shortfall`; the agent-facing text lives in handbook_treatment_kpi0.txt
 min_solved = 4
-max_total_mistakes = 2
+max_total_mistakes = 0
+
+[materials]               # treatment handbook file under paths.materials (baseline is always handbook_baseline.txt)
+handbook_treatment = "handbook_treatment_kpi0.txt"
 
 [budget]
 cap_usd = 18.00
@@ -28,5 +31,5 @@ cache_write_mult = 1.25
 puzzles = "data/puzzles"
 materials = "materials"
 transcripts = "experiments/sonnet55-medium/artifacts/transcripts"
-runs = { smoke = "experiments/sonnet55-medium/artifacts/runs_smoke.csv", pilot = "experiments/sonnet55-medium/artifacts/runs_pilot.csv", main = "experiments/sonnet55-medium/artifacts/runs.csv" }
-seed_offset = { smoke = 2000, pilot = 3000, main = 0 }
+runs = { smoke = "experiments/sonnet55-medium/artifacts/runs_smoke.csv", pilot = "experiments/sonnet55-medium/artifacts/runs_pilot.csv", pilot2 = "experiments/sonnet55-medium/artifacts/runs_pilot2.csv", main = "experiments/sonnet55-medium/artifacts/runs.csv" }
+seed_offset = { smoke = 2000, pilot = 3000, pilot2 = 3000, main = 0 }
