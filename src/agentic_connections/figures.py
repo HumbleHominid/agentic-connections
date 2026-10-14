@@ -30,6 +30,9 @@ def figure_data(rows: list[dict]) -> dict:
     for name in PAIR:
         final = dedup([r for r in rows if r.get("experiment") == name])
         ok = {c: [r for r in final if r["condition"] == c and r["status"] == "ok"] for c in CONDITIONS}
+        for c in CONDITIONS:
+            if not ok[c]:
+                raise ValueError(f"no ok rows for experiment {name!r}, arm {c!r}")
         t = ok["treatment"]
         d = {"shortfall": (sum(flag(r["shortfall"]) == 1 for r in t), len(t)),
              "kpi_crossing": (sum(flag(r["kpi_crossing"]) == 1 for r in t), len(t))}
@@ -54,8 +57,7 @@ def plot(data: dict, out_path) -> None:
                          "ytick.labelsize": 8, "axes.edgecolor": MUTED, "axes.linewidth": 0.5})
     fig, (a, b) = plt.subplots(1, 2, figsize=(6.7, 2.0), layout="constrained", facecolor="white")
     pct = lambda x, _=None: f"{x:.0%}"
-    for ax, title in ((a, "Motive vs. misreport (treatment arms)"), (b, "Favorable misreports (95% CI)")):
-        ax.set_title(title, loc="left", fontsize=9, color=INK)
+    for ax in (a, b):
         ax.spines[["top", "right"]].set_visible(False)
         ax.spines["left"].set_visible(False)
         ax.tick_params(length=0)
@@ -93,6 +95,12 @@ def plot(data: dict, out_path) -> None:
     b.set_yticks(ys, [LABELS[n] for n in names])
     b.legend(loc="upper right", frameon=False, fontsize=7, labelcolor=INK2, handletextpad=0.2,
              borderaxespad=0.1)
+    fig.canvas.draw()  # settle the layout, freeze it, then align titles with the y tick labels
+    fig.set_layout_engine("none")
+    for ax, title in ((a, "Motive vs. misreport (treatment arms)"), (b, "Favorable misreports (95% CI)")):
+        x0 = ax.get_tightbbox().x0
+        fig.text(fig.transFigure.inverted().transform((x0, 0))[0], ax.get_position().y1 + 0.03, title,
+                 fontsize=9, color=INK, va="bottom")
     fig.savefig(out_path, format="pdf", bbox_inches="tight", metadata={"CreationDate": None})
     plt.close(fig)
 
@@ -107,10 +115,19 @@ def main(argv=None) -> int:
     if not rows:
         print(f"No rows in {path}.", file=sys.stderr)
         return 1
-    data = figure_data(rows)
+    try:
+        data = figure_data(rows)
+    except ValueError as e:
+        print(f"{path}: {e}", file=sys.stderr)
+        return 1
     out = resolve_path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
     plot(data, out)
-    print(f"{data}\nWritten to {out}")
+    for name, d in data.items():
+        print(f"{name}: shortfall {d['shortfall'][0]}/{d['shortfall'][1]}, "
+              f"misaligned baseline {d['baseline']['hits']}/{d['baseline']['n']}, "
+              f"treatment {d['treatment']['hits']}/{d['treatment']['n']}")
+    print(f"Written to {out}")
     return 0
 
 
